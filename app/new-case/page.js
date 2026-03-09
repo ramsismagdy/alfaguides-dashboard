@@ -97,7 +97,7 @@ function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
       padding:"18px"
     }}>
       <p style={{fontWeight:"600",color:"#685B60"}}>
-        Select Tooth / Teeth
+        Select Tooth / Teeth *
       </p>
 
       {renderRow("Upper",upperTeeth)}
@@ -125,12 +125,7 @@ export default function NewCasePage() {
   const [loading,setLoading]=useState(false)
   const [message,setMessage]=useState("")
 
-  const showArch =
-    serviceType==="Implant Planning" ||
-    serviceType==="Implant Full Mouth Rehabilitation" ||
-    serviceType==="Surgical Guide" ||
-    serviceType==="All-on-X Prosthesis" ||
-    serviceType==="Denture"
+  const showArch = true
 
   const showNumberOfImplants =
     serviceType==="Implant Planning" ||
@@ -141,21 +136,30 @@ export default function NewCasePage() {
     e.preventDefault()
     setMessage("")
 
-    if(
-      !patientFirstName ||
-      !patientLastName ||
-      selectedTeeth.length===0 ||
-      !serviceType ||
-      !implantType ||
-      !surgicalKit ||
-      !surgicalDate
-    ){
-      setMessage("Please fill in all required fields.")
+    /* REQUIRED VALIDATION */
+
+    if(!patientFirstName.trim()){
+      setMessage("Patient first name is required.")
       return
     }
 
-    if(showArch && !arch){
+    if(!patientLastName.trim()){
+      setMessage("Patient last name is required.")
+      return
+    }
+
+    if(!serviceType){
+      setMessage("Please select a service.")
+      return
+    }
+
+    if(!arch){
       setMessage("Please select arch.")
+      return
+    }
+
+    if(selectedTeeth.length===0){
+      setMessage("Please select at least one tooth.")
       return
     }
 
@@ -187,7 +191,7 @@ export default function NewCasePage() {
       return
     }
 
-    setMessage(`Case submitted. ID: ${caseId}`)
+    setMessage(`Case submitted successfully. Case ID: ${caseId}`)
 
     setPatientFirstName("")
     setPatientLastName("")
@@ -231,7 +235,7 @@ export default function NewCasePage() {
           }}>
 
             <div>
-              <label style={labelStyle}>Patient First Name</label>
+              <label style={labelStyle}>Patient First Name *</label>
               <input
                 style={inputStyle}
                 value={patientFirstName}
@@ -240,7 +244,7 @@ export default function NewCasePage() {
             </div>
 
             <div>
-              <label style={labelStyle}>Patient Last Name</label>
+              <label style={labelStyle}>Patient Last Name *</label>
               <input
                 style={inputStyle}
                 value={patientLastName}
@@ -248,15 +252,8 @@ export default function NewCasePage() {
               />
             </div>
 
-            <div style={{gridColumn:"1/-1"}}>
-              <ToothSelector
-                selectedTeeth={selectedTeeth}
-                setSelectedTeeth={setSelectedTeeth}
-              />
-            </div>
-
             <div>
-              <label style={labelStyle}>Service</label>
+              <label style={labelStyle}>Service *</label>
               <select
                 style={inputStyle}
                 value={serviceType}
@@ -271,6 +268,27 @@ export default function NewCasePage() {
                 <option>Crown</option>
                 <option>Denture</option>
               </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Arch *</label>
+              <select
+                style={inputStyle}
+                value={arch}
+                onChange={(e)=>setArch(e.target.value)}
+              >
+                <option value="">Select</option>
+                <option>Upper</option>
+                <option>Lower</option>
+                <option>Both</option>
+              </select>
+            </div>
+
+            <div style={{gridColumn:"1/-1"}}>
+              <ToothSelector
+                selectedTeeth={selectedTeeth}
+                setSelectedTeeth={setSelectedTeeth}
+              />
             </div>
 
             <div>
@@ -300,22 +318,6 @@ export default function NewCasePage() {
                 onChange={(e)=>setSurgicalDate(e.target.value)}
               />
             </div>
-
-            {showArch && (
-              <div>
-                <label style={labelStyle}>Arch</label>
-                <select
-                  style={inputStyle}
-                  value={arch}
-                  onChange={(e)=>setArch(e.target.value)}
-                >
-                  <option value="">Select</option>
-                  <option>Upper</option>
-                  <option>Lower</option>
-                  <option>Both</option>
-                </select>
-              </div>
-            )}
 
             {showNumberOfImplants && (
               <div>
@@ -370,10 +372,7 @@ export default function NewCasePage() {
         padding:"14px 30px"
       }}>
         Need help? Call Alfaguides Support → 
-        <a
-          href="tel:+34953805054"
-          style={{color:"#F0F0F0",fontWeight:"600"}}
-        >
+        <a href="tel:+34953805054" style={{color:"#F0F0F0",fontWeight:"600"}}>
           +34 953 80 50 54
         </a>
       </div>
