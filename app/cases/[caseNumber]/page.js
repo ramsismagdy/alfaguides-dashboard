@@ -42,10 +42,17 @@ export default function CaseDetailsPage({ params }) {
       .from("cases")
       .select("*")
       .eq("case_number", decodedCaseNumber)
-      .single()
+      .limit(1)
+      .maybeSingle()
 
     if (error) {
       setMessage(`Error: ${error.message}`)
+      setLoading(false)
+      return
+    }
+
+    if (!data) {
+      setMessage("Case not found.")
       setLoading(false)
       return
     }
