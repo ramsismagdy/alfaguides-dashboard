@@ -21,6 +21,7 @@ function StatCard({ title, value }) {
       >
         {title}
       </p>
+
       <h2
         style={{
           marginTop: "12px",
@@ -35,28 +36,54 @@ function StatCard({ title, value }) {
   )
 }
 
+const tableHeadStyle = {
+  textAlign: "left",
+  padding: "14px 12px",
+  borderBottom: "1px solid #eee",
+  color: "#685B60",
+  fontSize: "14px",
+  whiteSpace: "nowrap"
+}
+
+const tableCellStyle = {
+  padding: "14px 12px",
+  borderBottom: "1px solid #f1f1f1",
+  color: "#685B60",
+  fontSize: "14px",
+  whiteSpace: "nowrap"
+}
+
 export default function Home() {
   const cases = [
     {
       id: "CASE-000124",
-      patient: "John Smith",
-      service: "Crown",
-      status: "In Design",
-      dueDate: "2026-03-12"
+      firstName: "John",
+      lastName: "Smith",
+      service: "Surgical Guide",
+      implant: "Straumann BLX",
+      kit: "Straumann Kit",
+      surgicalDate: "2026-03-12",
+      status: "In Design"
     },
     {
       id: "CASE-000125",
-      patient: "Mariam Nabil",
-      service: "Denture",
-      status: "Pending Information",
-      dueDate: "2026-03-13"
+      firstName: "Mariam",
+      lastName: "Nabil",
+      service: "Surgical Guide",
+      implant: "Nobel Active",
+      kit: "Nobel Biocare Kit",
+      surgicalDate: "2026-03-14",
+      status: "Pending Information"
     },
     {
       id: "CASE-000126",
-      patient: "David Lee",
+      firstName: "David",
+      lastName: "Lee",
       service: "Surgical Guide",
-      status: "Ready",
-      dueDate: "2026-03-10"
+      implant: "Megagen AnyRidge",
+      kit: "Megagen Kit",
+      surgicalDate: "2026-03-10",
+      status: "Ready"
     }
   ]
 
@@ -77,11 +104,7 @@ export default function Home() {
           boxSizing: "border-box"
         }}
       >
-        <div
-          style={{
-            marginBottom: "32px"
-          }}
-        >
+        <div style={{ marginBottom: "32px" }}>
           <h1
             style={{
               margin: 0,
@@ -91,6 +114,7 @@ export default function Home() {
           >
             Dashboard
           </h1>
+
           <p
             style={{
               color: "#685B60",
@@ -146,18 +170,25 @@ export default function Home() {
                   <th style={tableHeadStyle}>Case ID</th>
                   <th style={tableHeadStyle}>Patient</th>
                   <th style={tableHeadStyle}>Service</th>
+                  <th style={tableHeadStyle}>Implant Type</th>
+                  <th style={tableHeadStyle}>Surgical Kit</th>
+                  <th style={tableHeadStyle}>Surgical Date</th>
                   <th style={tableHeadStyle}>Status</th>
-                  <th style={tableHeadStyle}>Due Date</th>
                 </tr>
               </thead>
+
               <tbody>
                 {cases.map((item) => (
                   <tr key={item.id}>
                     <td style={tableCellStyle}>{item.id}</td>
-                    <td style={tableCellStyle}>{item.patient}</td>
+                    <td style={tableCellStyle}>
+                      {item.firstName} {item.lastName}
+                    </td>
                     <td style={tableCellStyle}>{item.service}</td>
+                    <td style={tableCellStyle}>{item.implant}</td>
+                    <td style={tableCellStyle}>{item.kit}</td>
+                    <td style={tableCellStyle}>{item.surgicalDate}</td>
                     <td style={tableCellStyle}>{item.status}</td>
-                    <td style={tableCellStyle}>{item.dueDate}</td>
                   </tr>
                 ))}
               </tbody>
@@ -167,19 +198,4 @@ export default function Home() {
       </div>
     </div>
   )
-}
-
-const tableHeadStyle = {
-  textAlign: "left",
-  padding: "14px 12px",
-  borderBottom: "1px solid #eee",
-  color: "#685B60",
-  fontSize: "14px"
-}
-
-const tableCellStyle = {
-  padding: "14px 12px",
-  borderBottom: "1px solid #f1f1f1",
-  color: "#685B60",
-  fontSize: "14px"
 }
