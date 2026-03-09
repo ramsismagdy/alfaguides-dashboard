@@ -16,7 +16,7 @@ export default function Home() {
         color:"#685B60"
       }}>
         <h1>Dashboard</h1>
-        <p>Welcome to Alfaguides Dental Lab Portal</p>
+        <p>Welcome to Alfaguides</p>
       </div>
 
     </div>
