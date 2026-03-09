@@ -24,13 +24,48 @@ const valueStyle = {
   fontWeight: "600"
 }
 
+const inputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "12px",
+  border: "1px solid #E7D9E3",
+  background: "#FFFFFF",
+  color: "#685B60",
+  fontSize: "14px",
+  outline: "none",
+  boxSizing: "border-box"
+}
+
+const buttonStyle = {
+  background: "#685B60",
+  color: "#F0F0F0",
+  border: "none",
+  borderRadius: "12px",
+  padding: "12px 18px",
+  fontSize: "14px",
+  cursor: "pointer"
+}
+
+const statusOptions = [
+  "New Case",
+  "Pending Info",
+  "In Design",
+  "Manufacturing",
+  "Ready",
+  "Delivered",
+  "Cancelled"
+]
+
 export default function CaseDetailsPage() {
   const params = useParams()
   const caseId = params?.caseNumber
 
   const [caseData, setCaseData] = useState(null)
+  const [status, setStatus] = useState("")
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
+  const [savingStatus, setSavingStatus] = useState(false)
+  const [statusMessage, setStatusMessage] = useState("")
 
   useEffect(() => {
     if (caseId) {
@@ -44,6 +79,7 @@ export default function CaseDetailsPage() {
   const fetchCaseDetails = async () => {
     setLoading(true)
     setMessage("")
+    setStatusMessage("")
 
     const decodedCaseId = decodeURIComponent(caseId)
 
@@ -66,7 +102,33 @@ export default function CaseDetailsPage() {
     }
 
     setCaseData(data)
+    setStatus(data.status || "New Case")
     setLoading(false)
+  }
+
+  const updateStatus = async () => {
+    if (!caseData?.id) {
+      setStatusMessage("Case ID is missing.")
+      return
+    }
+
+    setSavingStatus(true)
+    setStatusMessage("")
+
+    const { error } = await supabase
+      .from("cases")
+      .update({ status })
+      .eq("id", caseData.id)
+
+    if (error) {
+      setStatusMessage(`Error: ${error.message}`)
+      setSavingStatus(false)
+      return
+    }
+
+    setCaseData({ ...caseData, status })
+    setStatusMessage("Status updated successfully.")
+    setSavingStatus(false)
   }
 
   return (
@@ -170,8 +232,59 @@ export default function CaseDetailsPage() {
               </div>
 
               <div style={{ marginBottom: "18px" }}>
-                <div style={labelStyle}>Status</div>
+                <div style={labelStyle}>Current Status</div>
                 <div style={valueStyle}>{caseData.status || "-"}</div>
+              </div>
+            </div>
+
+            <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
+              <div style={{ marginBottom: "18px" }}>
+                <div style={labelStyle}>Update Status</div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                    alignItems: "center"
+                  }}
+                >
+                  <select
+                    style={{ ...inputStyle, maxWidth: "260px" }}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    {statusOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={updateStatus}
+                    disabled={savingStatus}
+                    style={{
+                      ...buttonStyle,
+                      opacity: savingStatus ? 0.7 : 1
+                    }}
+                  >
+                    {savingStatus ? "Updating..." : "Update Status"}
+                  </button>
+                </div>
+
+                {statusMessage && (
+                  <p
+                    style={{
+                      marginTop: "14px",
+                      color: "#685B60",
+                      fontSize: "14px"
+                    }}
+                  >
+                    {statusMessage}
+                  </p>
+                )}
               </div>
             </div>
 
