@@ -1,9 +1,13 @@
+import Link from "next/link"
+
 export default function Sidebar() {
   const menuItemStyle = {
     margin: "18px 0",
     cursor: "pointer",
     color: "#F0F0F0",
-    fontSize: "16px"
+    fontSize: "16px",
+    textDecoration: "none",
+    display: "block"
   }
 
   return (
@@ -19,12 +23,23 @@ export default function Sidebar() {
     >
       <h2 style={{ color: "#F0F0F0", marginBottom: "40px" }}>Alfaguides</h2>
 
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        <li style={menuItemStyle}>Dashboard</li>
-        <li style={menuItemStyle}>New Case</li>
-        <li style={menuItemStyle}>Cases</li>
-        <li style={menuItemStyle}>Settings</li>
-      </ul>
+      <nav>
+        <Link href="/" style={menuItemStyle}>
+          Dashboard
+        </Link>
+
+        <Link href="/new-case" style={menuItemStyle}>
+          New Case
+        </Link>
+
+        <Link href="/cases" style={menuItemStyle}>
+          Cases
+        </Link>
+
+        <Link href="/settings" style={menuItemStyle}>
+          Settings
+        </Link>
+      </nav>
     </div>
   )
 }
