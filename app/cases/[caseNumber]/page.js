@@ -56,16 +56,54 @@ const statusOptions = [
   "Cancelled"
 ]
 
+function formatDate(value) {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric"
+  }).format(date)
+}
+
+function formatDateTime(value) {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric"
+  }).format(date)
+
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short"
+  }).format(date)
+
+  return `${datePart}, ${timePart}`
+}
+
 export default function CaseDetailsPage() {
   const params = useParams()
   const caseId = params?.caseNumber
 
   const [caseData, setCaseData] = useState(null)
-  const [status, setStatus] = useState("")
+  const [caseNotes, setCaseNotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
   const [savingStatus, setSavingStatus] = useState(false)
   const [statusMessage, setStatusMessage] = useState("")
+  const [savingNote, setSavingNote] = useState(false)
+  const [notesMessage, setNotesMessage] = useState("")
+
+  const [status, setStatus] = useState("")
+  const [newNote, setNewNote] = useState("")
 
   useEffect(() => {
     if (caseId) {
@@ -80,6 +118,7 @@ export default function CaseDetailsPage() {
     setLoading(true)
     setMessage("")
     setStatusMessage("")
+    setNotesMessage("")
 
     const decodedCaseId = decodeURIComponent(caseId)
 
@@ -103,6 +142,20 @@ export default function CaseDetailsPage() {
 
     setCaseData(data)
     setStatus(data.status || "New Case")
+
+    const { data: notesData, error: notesError } = await supabase
+      .from("case_notes")
+      .select("*")
+      .eq("case_id", decodedCaseId)
+      .order("created_at", { ascending: false })
+
+    if (notesError) {
+      setMessage(`Error: ${notesError.message}`)
+      setLoading(false)
+      return
+    }
+
+    setCaseNotes(notesData || [])
     setLoading(false)
   }
 
@@ -129,6 +182,43 @@ export default function CaseDetailsPage() {
     setCaseData({ ...caseData, status })
     setStatusMessage("Status updated successfully.")
     setSavingStatus(false)
+  }
+
+  const saveNote = async () => {
+    if (!caseData?.id) {
+      setNotesMessage("Case ID is missing.")
+      return
+    }
+
+    if (!newNote.trim()) {
+      setNotesMessage("Please write a note first.")
+      return
+    }
+
+    setSavingNote(true)
+    setNotesMessage("")
+
+    const { data, error } = await supabase
+      .from("case_notes")
+      .insert([
+        {
+          case_id: caseData.id,
+          note_text: newNote.trim()
+        }
+      ])
+      .select()
+
+    if (error) {
+      setNotesMessage(`Error: ${error.message}`)
+      setSavingNote(false)
+      return
+    }
+
+    const insertedNote = data?.[0]
+    setCaseNotes(insertedNote ? [insertedNote, ...caseNotes] : caseNotes)
+    setNewNote("")
+    setNotesMessage("Note added successfully.")
+    setSavingNote(false)
   }
 
   return (
@@ -213,6 +303,11 @@ export default function CaseDetailsPage() {
                 <div style={labelStyle}>Service</div>
                 <div style={valueStyle}>{caseData.service_type || "-"}</div>
               </div>
+
+              <div style={{ marginBottom: "18px" }}>
+                <div style={labelStyle}>Submission Date</div>
+                <div style={valueStyle}>{formatDateTime(caseData.created_at)}</div>
+              </div>
             </div>
 
             <div style={cardStyle}>
@@ -228,7 +323,7 @@ export default function CaseDetailsPage() {
 
               <div style={{ marginBottom: "18px" }}>
                 <div style={labelStyle}>Surgical Date</div>
-                <div style={valueStyle}>{caseData.surgical_date || "-"}</div>
+                <div style={valueStyle}>{formatDate(caseData.surgical_date)}</div>
               </div>
 
               <div style={{ marginBottom: "18px" }}>
@@ -289,9 +384,89 @@ export default function CaseDetailsPage() {
             </div>
 
             <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
-              <div style={labelStyle}>Notes</div>
-              <div style={valueStyle}>
-                {caseData.notes ? caseData.notes : "No notes added yet."}
+              <div style={{ marginBottom: "18px" }}>
+                <label style={labelStyle}>Add Note</label>
+                <textarea
+                  style={{ ...inputStyle, minHeight: "120px", resize: "vertical" }}
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={saveNote}
+                disabled={savingNote}
+                style={{
+                  ...buttonStyle,
+                  opacity: savingNote ? 0.7 : 1
+                }}
+              >
+                {savingNote ? "Saving..." : "Add Note"}
+              </button>
+
+              {notesMessage && (
+                <p
+                  style={{
+                    marginTop: "14px",
+                    color: "#685B60",
+                    fontSize: "14px"
+                  }}
+                >
+                  {notesMessage}
+                </p>
+              )}
+
+              <div style={{ marginTop: "24px" }}>
+                <div
+                  style={{
+                    color: "#685B60",
+                    fontSize: "16px",
+                    fontWeight: "700",
+                    marginBottom: "14px"
+                  }}
+                >
+                  Notes History
+                </div>
+
+                {caseNotes.length === 0 ? (
+                  <div style={{ color: "#685B60", fontSize: "14px" }}>
+                    No notes added yet.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: "14px" }}>
+                    {caseNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        style={{
+                          border: "1px solid #E7D9E3",
+                          borderRadius: "14px",
+                          padding: "14px"
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: "#9B8C93",
+                            fontSize: "12px",
+                            marginBottom: "8px"
+                          }}
+                        >
+                          {formatDateTime(note.created_at)}
+                        </div>
+
+                        <div
+                          style={{
+                            color: "#685B60",
+                            fontSize: "14px",
+                            lineHeight: "1.6"
+                          }}
+                        >
+                          {note.note_text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
