@@ -129,7 +129,7 @@ export default function NewCasePage() {
               fontSize: "16px"
             }}
           >
-            Submit a new surgical guide case
+            Submit a new dental case
           </p>
         </div>
 
@@ -193,6 +193,13 @@ export default function NewCasePage() {
                 <option value="">Select service</option>
                 <option value="Surgical Guide">Surgical Guide</option>
                 <option value="Implant Planning">Implant Planning</option>
+                <option value="Implant Full Mouth Rehabilitation">
+                  Implant Full Mouth Rehabilitation
+                </option>
+                <option value="All-on-X Prosthesis">All-on-X Prosthesis</option>
+                <option value="Custom Healing Abutment">
+                  Custom Healing Abutment
+                </option>
                 <option value="Crown">Crown</option>
                 <option value="Denture">Denture</option>
               </select>
