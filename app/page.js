@@ -1,15 +1,16 @@
+import Sidebar from "../components/Sidebar"
+
 export default function Home() {
   return (
-    <main style={{padding:"40px", fontFamily:"Arial"}}>
-      <h1>Alfaguides Dental Lab Portal</h1>
+    <div style={{display:"flex"}}>
 
-      <p>Welcome to the Alfaguides Management System</p>
+      <Sidebar />
 
-      <div style={{marginTop:"30px"}}>
-        <button style={{marginRight:"10px"}}>New Case</button>
-        <button style={{marginRight:"10px"}}>Track Case</button>
-        <button>Admin Panel</button>
+      <div style={{padding:"40px", flex:1}}>
+        <h1>Dashboard</h1>
+        <p>Welcome to Alfaguides Dental Lab Portal</p>
       </div>
-    </main>
+
+    </div>
   )
 }
