@@ -25,8 +25,8 @@ const inputStyle = {
 }
 
 const toothButtonStyle = (isSelected) => ({
-  width: "44px",
-  height: "44px",
+  width: "42px",
+  height: "42px",
   borderRadius: "12px",
   border: isSelected ? "1px solid #685B60" : "1px solid #E7D9E3",
   background: isSelected ? "#685B60" : "#FFFFFF",
@@ -41,10 +41,43 @@ function generateCaseId() {
   return `CASE-${randomNumber}`
 }
 
-const upperRight = ["18", "17", "16", "15", "14", "13", "12", "11"]
-const upperLeft = ["21", "22", "23", "24", "25", "26", "27", "28"]
-const lowerRight = ["48", "47", "46", "45", "44", "43", "42", "41"]
-const lowerLeft = ["31", "32", "33", "34", "35", "36", "37", "38"]
+const upperTeeth = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "11",
+  "12",
+  "13",
+  "14",
+  "15",
+  "16"
+]
+
+const lowerTeeth = [
+  "17",
+  "18",
+  "19",
+  "20",
+  "21",
+  "22",
+  "23",
+  "24",
+  "25",
+  "26",
+  "27",
+  "28",
+  "29",
+  "30",
+  "31",
+  "32"
+]
 
 function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
   const toggleTooth = (tooth) => {
@@ -55,25 +88,39 @@ function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
     }
   }
 
-  const renderRow = (teeth) => (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(8, 44px)",
-        gap: "10px",
-        justifyContent: "start"
-      }}
-    >
-      {teeth.map((tooth) => (
-        <button
-          key={tooth}
-          type="button"
-          onClick={() => toggleTooth(tooth)}
-          style={toothButtonStyle(selectedTeeth.includes(tooth))}
-        >
-          {tooth}
-        </button>
-      ))}
+  const renderRow = (label, teeth) => (
+    <div style={{ marginBottom: "16px" }}>
+      <div
+        style={{
+          marginBottom: "10px",
+          color: "#685B60",
+          fontSize: "13px",
+          fontWeight: "600"
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(16, 42px)",
+          gap: "8px",
+          overflowX: "auto",
+          paddingBottom: "4px"
+        }}
+      >
+        {teeth.map((tooth) => (
+          <button
+            key={tooth}
+            type="button"
+            onClick={() => toggleTooth(tooth)}
+            style={toothButtonStyle(selectedTeeth.includes(tooth))}
+          >
+            {tooth}
+          </button>
+        ))}
+      </div>
     </div>
   )
 
@@ -98,19 +145,8 @@ function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
         Select Tooth / Teeth
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {renderRow(upperRight)}
-        {renderRow(upperLeft)}
-
-        <div
-          style={{
-            height: "10px"
-          }}
-        />
-
-        {renderRow(lowerRight)}
-        {renderRow(lowerLeft)}
-      </div>
+      {renderRow("Upper", upperTeeth)}
+      {renderRow("Lower", lowerTeeth)}
 
       <div style={{ marginTop: "16px", color: "#685B60", fontSize: "14px" }}>
         Selected: {selectedTeeth.length > 0 ? selectedTeeth.join(", ") : "None"}
@@ -134,12 +170,14 @@ export default function NewCasePage() {
   const [numberOfImplants, setNumberOfImplants] = useState("")
 
   const showArch =
+    serviceType === "Implant Planning" ||
     serviceType === "Implant Full Mouth Rehabilitation" ||
     serviceType === "Surgical Guide" ||
     serviceType === "All-on-X Prosthesis" ||
     serviceType === "Denture"
 
   const showNumberOfImplants =
+    serviceType === "Implant Planning" ||
     serviceType === "Implant Full Mouth Rehabilitation" ||
     serviceType === "Surgical Guide"
 
@@ -256,7 +294,7 @@ export default function NewCasePage() {
             borderRadius: "16px",
             padding: "24px",
             boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
-            maxWidth: "980px"
+            maxWidth: "1100px"
           }}
         >
           <div
