@@ -40,16 +40,14 @@ function generateCaseId() {
   return `CASE-${randomNumber}`
 }
 
-/* American numbering */
-
 const upperTeeth = [
-  "1","2","3","4","5","6","7","8",
-  "9","10","11","12","13","14","15","16"
+"1","2","3","4","5","6","7","8",
+"9","10","11","12","13","14","15","16"
 ]
 
 const lowerTeeth = [
-  "32","31","30","29","28","27","26","25",
-  "24","23","22","21","20","19","18","17"
+"32","31","30","29","28","27","26","25",
+"24","23","22","21","20","19","18","17"
 ]
 
 function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
@@ -314,6 +312,7 @@ export default function NewCasePage() {
                   <option value="">Select</option>
                   <option>Upper</option>
                   <option>Lower</option>
+                  <option>Both</option>
                 </select>
               </div>
             )}
