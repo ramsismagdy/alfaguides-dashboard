@@ -35,6 +35,16 @@ const toothButtonStyle = (selected) => ({
   fontWeight: "600"
 })
 
+const secondaryButtonStyle = {
+  background: "#FFFFFF",
+  color: "#685B60",
+  border: "1px solid #E7D9E3",
+  borderRadius: "12px",
+  padding: "10px 14px",
+  fontSize: "14px",
+  cursor: "pointer"
+}
+
 const upperTeeth = [
   "1", "2", "3", "4", "5", "6", "7", "8",
   "9", "10", "11", "12", "13", "14", "15", "16"
@@ -125,6 +135,63 @@ function detectArch(selectedTeeth) {
   return "Both"
 }
 
+function detectFileType(file) {
+  const name = file.name.toLowerCase()
+  const mime = (file.type || "").toLowerCase()
+
+  if (name.endsWith(".stl")) return "STL"
+  if (name.endsWith(".obj") || name.endsWith(".ply")) return "3D Model"
+  if (name.endsWith(".dcm") || name.endsWith(".dicom") || mime.includes("dicom")) return "DICOM"
+  if (mime.startsWith("image/")) return "Photo"
+
+  if (
+    name.endsWith(".zip") ||
+    name.endsWith(".rar") ||
+    name.endsWith(".7z") ||
+    name.endsWith(".tar") ||
+    name.endsWith(".gz") ||
+    name.endsWith(".bz2") ||
+    name.endsWith(".xz")
+  ) {
+    return "Archive"
+  }
+
+  return "Other"
+}
+
+function isAllowedFile(file) {
+  const name = file.name.toLowerCase()
+  const mime = (file.type || "").toLowerCase()
+
+  return (
+    name.endsWith(".stl") ||
+    name.endsWith(".obj") ||
+    name.endsWith(".ply") ||
+    name.endsWith(".dcm") ||
+    name.endsWith(".dicom") ||
+    mime.startsWith("image/") ||
+    name.endsWith(".zip") ||
+    name.endsWith(".rar") ||
+    name.endsWith(".7z") ||
+    name.endsWith(".tar") ||
+    name.endsWith(".gz") ||
+    name.endsWith(".bz2") ||
+    name.endsWith(".xz")
+  )
+}
+
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
+}
+
+function formatFileSize(size) {
+  if (!size && size !== 0) return "-"
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 async function getNextCaseNumber() {
   const { data, error } = await supabase.rpc("get_next_case_number")
 
@@ -146,6 +213,8 @@ export default function NewCasePage() {
   const [notes, setNotes] = useState("")
   const [arch, setArch] = useState("")
   const [numberOfImplants, setNumberOfImplants] = useState("")
+  const [selectedFiles, setSelectedFiles] = useState([])
+  const [fileInputKey, setFileInputKey] = useState(0)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState("")
 
@@ -157,6 +226,25 @@ export default function NewCasePage() {
     serviceType === "Implant Planning" ||
     serviceType === "Implant Full Mouth Rehabilitation" ||
     serviceType === "Surgical Guide"
+
+  const removeSelectedFile = (fileName) => {
+    setSelectedFiles((prev) => prev.filter((file) => file.name !== fileName))
+  }
+
+  const resetForm = () => {
+    setPatientFirstName("")
+    setPatientLastName("")
+    setSelectedTeeth([])
+    setServiceType("")
+    setImplantType("")
+    setSurgicalKit("")
+    setSurgicalDate("")
+    setNotes("")
+    setArch("")
+    setNumberOfImplants("")
+    setSelectedFiles([])
+    setFileInputKey((prev) => prev + 1)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -192,6 +280,12 @@ export default function NewCasePage() {
       return
     }
 
+    const invalidFiles = selectedFiles.filter((file) => !isAllowedFile(file))
+    if (invalidFiles.length > 0) {
+      setMessage(`Unsupported file type: ${invalidFiles[0].name}`)
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -203,12 +297,12 @@ export default function NewCasePage() {
         .insert([
           {
             case_number: caseNumber,
-            patient_first_name: patientFirstName,
-            patient_last_name: patientLastName,
+            patient_first_name: patientFirstName.trim(),
+            patient_last_name: patientLastName.trim(),
             tooth_number: toothNumber,
             service_type: serviceType,
-            implant_type: implantType,
-            surgical_kit: surgicalKit,
+            implant_type: implantType.trim() || null,
+            surgical_kit: surgicalKit.trim() || null,
             surgical_date: surgicalDate || null,
             status: "New Case"
           }
@@ -223,30 +317,107 @@ export default function NewCasePage() {
 
       const insertedCase = data?.[0]
 
-      if (insertedCase?.id) {
-        await supabase.from("case_timeline").insert([
-          {
-            case_id: insertedCase.id,
-            event_type: "case_created",
-            event_text: `Case created (${insertedCase.case_number})`
-          }
-        ])
+      if (!insertedCase?.id) {
+        setMessage("Case was created, but the case ID could not be returned.")
+        setLoading(false)
+        return
       }
 
-      setMessage(`Case submitted successfully. Case ID: ${caseNumber}`)
-      setPatientFirstName("")
-      setPatientLastName("")
-      setSelectedTeeth([])
-      setServiceType("")
-      setImplantType("")
-      setSurgicalKit("")
-      setSurgicalDate("")
-      setArch("")
-      setNumberOfImplants("")
-      setNotes("")
+      const timelineEntries = [
+        {
+          case_id: insertedCase.id,
+          event_type: "case_created",
+          event_text: `Case created (${insertedCase.case_number})`
+        }
+      ]
+
+      if (notes.trim()) {
+        const { error: noteError } = await supabase
+          .from("case_notes")
+          .insert([
+            {
+              case_id: insertedCase.id,
+              note_text: notes.trim()
+            }
+          ])
+
+        if (noteError) {
+          setMessage(`Case created, but note could not be saved: ${noteError.message}`)
+          setLoading(false)
+          return
+        }
+
+        timelineEntries.push({
+          case_id: insertedCase.id,
+          event_type: "note_added",
+          event_text: "Initial note added"
+        })
+      }
+
+      for (const file of selectedFiles) {
+        const safeName = sanitizeFileName(file.name)
+        const filePath = `${insertedCase.id}/${Date.now()}-${safeName}`
+        const fileType = detectFileType(file)
+
+        const { error: uploadError } = await supabase
+          .storage
+          .from("case-files")
+          .upload(filePath, file, {
+            upsert: false,
+            contentType: file.type || undefined
+          })
+
+        if (uploadError) {
+          setMessage(`Case created, but file upload failed for ${file.name}: ${uploadError.message}`)
+          setLoading(false)
+          return
+        }
+
+        const { error: fileRowError } = await supabase
+          .from("case_files")
+          .insert([
+            {
+              case_id: insertedCase.id,
+              file_name: file.name,
+              file_path: filePath,
+              file_type: fileType
+            }
+          ])
+
+        if (fileRowError) {
+          setMessage(`Case created, but file record could not be saved for ${file.name}: ${fileRowError.message}`)
+          setLoading(false)
+          return
+        }
+
+        timelineEntries.push({
+          case_id: insertedCase.id,
+          event_type: "file_uploaded",
+          event_text: `File uploaded: ${file.name}`
+        })
+      }
+
+      if (timelineEntries.length > 0) {
+        await supabase
+          .from("case_timeline")
+          .insert(timelineEntries)
+      }
+
+      const successParts = [`Case submitted successfully. Case ID: ${caseNumber}`]
+
+      if (notes.trim()) {
+        successParts.push("Initial note saved.")
+      }
+
+      if (selectedFiles.length > 0) {
+        successParts.push(`${selectedFiles.length} file${selectedFiles.length > 1 ? "s" : ""} uploaded.`)
+      }
+
+      setMessage(successParts.join(" "))
+      resetForm()
       setLoading(false)
     } catch (err) {
-      setMessage(err.message || "Failed to generate case number.")
+      setMessage(err.message || "Failed to submit case.")
       setLoading(false)
     }
   }
@@ -275,7 +446,8 @@ export default function NewCasePage() {
           style={{
             background: "#FFF",
             borderRadius: "16px",
-            padding: "24px"
+            padding: "24px",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.06)"
           }}
         >
           <div
@@ -385,14 +557,112 @@ export default function NewCasePage() {
           <div style={{ marginTop: "20px" }}>
             <label style={labelStyle}>Notes</label>
             <textarea
-              style={{ ...inputStyle, minHeight: "100px" }}
+              style={{ ...inputStyle, minHeight: "100px", resize: "vertical" }}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any internal note for this case"
             />
+          </div>
+
+          <div style={{ marginTop: "20px" }}>
+            <label style={labelStyle}>Upload Files</label>
+            <input
+              key={fileInputKey}
+              type="file"
+              multiple
+              accept=".stl,.obj,.ply,.dcm,.dicom,image/*,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
+              style={inputStyle}
+              onChange={(e) => setSelectedFiles(Array.from(e.target.files || []))}
+            />
+
+            <div
+              style={{
+                marginTop: "10px",
+                color: "#9B8C93",
+                fontSize: "13px",
+                lineHeight: "1.6"
+              }}
+            >
+              Supported files: STL, OBJ, PLY, DCM, DICOM, JPG, JPEG, PNG, ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ
+            </div>
+
+            <div style={{ marginTop: "18px" }}>
+              <div
+                style={{
+                  color: "#685B60",
+                  fontSize: "15px",
+                  fontWeight: "700",
+                  marginBottom: "12px"
+                }}
+              >
+                Selected Files
+              </div>
+
+              {selectedFiles.length === 0 ? (
+                <div
+                  style={{
+                    color: "#685B60",
+                    fontSize: "14px"
+                  }}
+                >
+                  No files selected yet.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {selectedFiles.map((file) => (
+                    <div
+                      key={`${file.name}-${file.size}`}
+                      style={{
+                        border: "1px solid #E7D9E3",
+                        borderRadius: "14px",
+                        padding: "14px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        background: "#FFFFFF"
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            color: "#685B60",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            marginBottom: "6px"
+                          }}
+                        >
+                          {file.name}
+                        </div>
+
+                        <div
+                          style={{
+                            color: "#9B8C93",
+                            fontSize: "12px"
+                          }}
+                        >
+                          {detectFileType(file)} • {formatFileSize(file.size)}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedFile(file.name)}
+                        style={secondaryButtonStyle}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <button
             type="submit"
+            disabled={loading}
             style={{
               marginTop: "24px",
               background: "#685B60",
@@ -400,13 +670,24 @@ export default function NewCasePage() {
               border: "none",
               padding: "14px 22px",
               borderRadius: "12px",
-              cursor: "pointer"
+              cursor: "pointer",
+              opacity: loading ? 0.7 : 1
             }}
           >
             {loading ? "Submitting..." : "Submit Case"}
           </button>
 
-          {message && <p style={{ marginTop: "16px" }}>{message}</p>}
+          {message && (
+            <p
+              style={{
+                marginTop: "16px",
+                color: "#685B60",
+                lineHeight: "1.6"
+              }}
+            >
+              {message}
+            </p>
+          )}
         </form>
       </div>
 
