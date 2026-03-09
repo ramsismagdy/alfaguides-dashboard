@@ -118,8 +118,12 @@ function ToothSelector({ selectedTeeth, setSelectedTeeth }) {
 function detectArch(selectedTeeth) {
   if (selectedTeeth.length === 0) return ""
 
-  const allUpper = selectedTeeth.every((tooth) => Number(tooth) >= 1 && Number(tooth) <= 16)
-  const allLower = selectedTeeth.every((tooth) => Number(tooth) >= 17 && Number(tooth) <= 32)
+  const allUpper = selectedTeeth.every(
+    (tooth) => Number(tooth) >= 1 && Number(tooth) <= 16
+  )
+  const allLower = selectedTeeth.every(
+    (tooth) => Number(tooth) >= 17 && Number(tooth) <= 32
+  )
 
   if (allUpper) return "Upper"
   if (allLower) return "Lower"
@@ -197,7 +201,7 @@ export default function NewCasePage() {
         service_type: serviceType,
         implant_type: implantType,
         surgical_kit: surgicalKit,
-        surgical_date: surgicalDate,
+        surgical_date: surgicalDate || null,
         status: "New Case"
       }
     ])

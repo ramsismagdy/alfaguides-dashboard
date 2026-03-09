@@ -175,7 +175,7 @@ export default function CasesPage() {
                       <tr key={item.id}>
                         <td style={tableCellStyle}>
                           <Link
-                            href={`/cases/${encodeURIComponent(item.case_number)}`}
+                            href={`/cases/${item.id}`}
                             style={linkStyle}
                           >
                             {item.case_number}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useParams } from "next/navigation"
 import Sidebar from "../../../components/Sidebar"
 import { supabase } from "../../../lib/supabase"
 
@@ -23,26 +24,33 @@ const valueStyle = {
   fontWeight: "600"
 }
 
-export default function CaseDetailsPage({ params }) {
+export default function CaseDetailsPage() {
+  const params = useParams()
+  const caseId = params?.caseNumber
+
   const [caseData, setCaseData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
 
   useEffect(() => {
-    fetchCaseDetails()
-  }, [])
+    if (caseId) {
+      fetchCaseDetails()
+    } else {
+      setLoading(false)
+      setMessage("Case ID not found in URL.")
+    }
+  }, [caseId])
 
   const fetchCaseDetails = async () => {
     setLoading(true)
     setMessage("")
 
-    const decodedCaseNumber = decodeURIComponent(params.caseNumber)
+    const decodedCaseId = decodeURIComponent(caseId)
 
     const { data, error } = await supabase
       .from("cases")
       .select("*")
-      .eq("case_number", decodedCaseNumber)
-      .limit(1)
+      .eq("id", decodedCaseId)
       .maybeSingle()
 
     if (error) {
