@@ -35,11 +35,6 @@ const toothButtonStyle = (selected) => ({
   fontWeight: "600"
 })
 
-function generateCaseId() {
-  const randomNumber = Math.floor(100000 + Math.random() * 900000)
-  return `CASE-${randomNumber}`
-}
-
 const upperTeeth = [
   "1", "2", "3", "4", "5", "6", "7", "8",
   "9", "10", "11", "12", "13", "14", "15", "16"
@@ -130,6 +125,16 @@ function detectArch(selectedTeeth) {
   return "Both"
 }
 
+async function getNextCaseNumber() {
+  const { data, error } = await supabase.rpc("get_next_case_number")
+
+  if (error) {
+    throw error
+  }
+
+  return String(data)
+}
+
 export default function NewCasePage() {
   const [patientFirstName, setPatientFirstName] = useState("")
   const [patientLastName, setPatientLastName] = useState("")
@@ -189,41 +194,61 @@ export default function NewCasePage() {
 
     setLoading(true)
 
-    const caseId = generateCaseId()
-    const toothNumber = selectedTeeth.join(",")
+    try {
+      const caseNumber = await getNextCaseNumber()
+      const toothNumber = selectedTeeth.join(",")
 
-    const { error } = await supabase.from("cases").insert([
-      {
-        case_number: caseId,
-        patient_first_name: patientFirstName,
-        patient_last_name: patientLastName,
-        tooth_number: toothNumber,
-        service_type: serviceType,
-        implant_type: implantType,
-        surgical_kit: surgicalKit,
-        surgical_date: surgicalDate || null,
-        status: "New Case"
+      const { data, error } = await supabase
+        .from("cases")
+        .insert([
+          {
+            case_number: caseNumber,
+            patient_first_name: patientFirstName,
+            patient_last_name: patientLastName,
+            tooth_number: toothNumber,
+            service_type: serviceType,
+            implant_type: implantType,
+            surgical_kit: surgicalKit,
+            surgical_date: surgicalDate || null,
+            status: "New Case"
+          }
+        ])
+        .select()
+
+      if (error) {
+        setMessage(error.message)
+        setLoading(false)
+        return
       }
-    ])
 
-    if (error) {
-      setMessage(error.message)
+      const insertedCase = data?.[0]
+
+      if (insertedCase?.id) {
+        await supabase.from("case_timeline").insert([
+          {
+            case_id: insertedCase.id,
+            event_type: "case_created",
+            event_text: `Case created (${insertedCase.case_number})`
+          }
+        ])
+      }
+
+      setMessage(`Case submitted successfully. Case ID: ${caseNumber}`)
+      setPatientFirstName("")
+      setPatientLastName("")
+      setSelectedTeeth([])
+      setServiceType("")
+      setImplantType("")
+      setSurgicalKit("")
+      setSurgicalDate("")
+      setArch("")
+      setNumberOfImplants("")
+      setNotes("")
       setLoading(false)
-      return
+    } catch (err) {
+      setMessage(err.message || "Failed to generate case number.")
+      setLoading(false)
     }
-
-    setMessage(`Case submitted successfully. Case ID: ${caseId}`)
-    setPatientFirstName("")
-    setPatientLastName("")
-    setSelectedTeeth([])
-    setServiceType("")
-    setImplantType("")
-    setSurgicalKit("")
-    setSurgicalDate("")
-    setArch("")
-    setNumberOfImplants("")
-    setNotes("")
-    setLoading(false)
   }
 
   return (

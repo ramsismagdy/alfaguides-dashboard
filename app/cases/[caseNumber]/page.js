@@ -89,12 +89,47 @@ function formatDateTime(value) {
   return `${datePart}, ${timePart}`
 }
 
+function getTimelineBadgeStyle(eventType) {
+  const base = {
+    padding: "4px 10px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: "600",
+    display: "inline-block"
+  }
+
+  switch (eventType) {
+    case "case_created":
+      return { ...base, background: "#E3EDFF", color: "#1D4ED8" }
+    case "status_changed":
+      return { ...base, background: "#EFE6FF", color: "#6D28D9" }
+    case "note_added":
+      return { ...base, background: "#FFF4E5", color: "#B45309" }
+    default:
+      return { ...base, background: "#F1F1F1", color: "#555" }
+  }
+}
+
+function getTimelineLabel(eventType) {
+  switch (eventType) {
+    case "case_created":
+      return "Case Created"
+    case "status_changed":
+      return "Status Updated"
+    case "note_added":
+      return "Note Added"
+    default:
+      return "Event"
+  }
+}
+
 export default function CaseDetailsPage() {
   const params = useParams()
   const caseId = params?.caseNumber
 
   const [caseData, setCaseData] = useState(null)
   const [caseNotes, setCaseNotes] = useState([])
+  const [timeline, setTimeline] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
   const [savingStatus, setSavingStatus] = useState(false)
@@ -155,7 +190,20 @@ export default function CaseDetailsPage() {
       return
     }
 
+    const { data: timelineData, error: timelineError } = await supabase
+      .from("case_timeline")
+      .select("*")
+      .eq("case_id", decodedCaseId)
+      .order("created_at", { ascending: false })
+
+    if (timelineError) {
+      setMessage(`Error: ${timelineError.message}`)
+      setLoading(false)
+      return
+    }
+
     setCaseNotes(notesData || [])
+    setTimeline(timelineData || [])
     setLoading(false)
   }
 
@@ -165,8 +213,15 @@ export default function CaseDetailsPage() {
       return
     }
 
+    if (status === caseData.status) {
+      setStatusMessage("Status is already set to this value.")
+      return
+    }
+
     setSavingStatus(true)
     setStatusMessage("")
+
+    const oldStatus = caseData.status || "Unknown"
 
     const { error } = await supabase
       .from("cases")
@@ -179,7 +234,21 @@ export default function CaseDetailsPage() {
       return
     }
 
+    const { data: timelineInsert } = await supabase
+      .from("case_timeline")
+      .insert([
+        {
+          case_id: caseData.id,
+          event_type: "status_changed",
+          event_text: `Status changed from ${oldStatus} to ${status}`
+        }
+      ])
+      .select()
+
     setCaseData({ ...caseData, status })
+    if (timelineInsert?.[0]) {
+      setTimeline([timelineInsert[0], ...timeline])
+    }
     setStatusMessage("Status updated successfully.")
     setSavingStatus(false)
   }
@@ -215,7 +284,22 @@ export default function CaseDetailsPage() {
     }
 
     const insertedNote = data?.[0]
+
+    const { data: timelineInsert } = await supabase
+      .from("case_timeline")
+      .insert([
+        {
+          case_id: caseData.id,
+          event_type: "note_added",
+          event_text: `Note added`
+        }
+      ])
+      .select()
+
     setCaseNotes(insertedNote ? [insertedNote, ...caseNotes] : caseNotes)
+    if (timelineInsert?.[0]) {
+      setTimeline([timelineInsert[0], ...timeline])
+    }
     setNewNote("")
     setNotesMessage("Note added successfully.")
     setSavingNote(false)
@@ -468,6 +552,71 @@ export default function CaseDetailsPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
+              <div
+                style={{
+                  color: "#685B60",
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  marginBottom: "14px"
+                }}
+              >
+                Timeline
+              </div>
+
+              {timeline.length === 0 ? (
+                <div style={{ color: "#685B60", fontSize: "14px" }}>
+                  No timeline events yet.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "14px" }}>
+                  {timeline.map((event) => (
+                    <div
+                      key={event.id}
+                      style={{
+                        border: "1px solid #E7D9E3",
+                        borderRadius: "14px",
+                        padding: "14px"
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "12px",
+                          flexWrap: "wrap",
+                          marginBottom: "8px"
+                        }}
+                      >
+                        <span style={getTimelineBadgeStyle(event.event_type)}>
+                          {getTimelineLabel(event.event_type)}
+                        </span>
+
+                        <span
+                          style={{
+                            color: "#9B8C93",
+                            fontSize: "12px"
+                          }}
+                        >
+                          {formatDateTime(event.created_at)}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#685B60",
+                          fontSize: "14px",
+                          lineHeight: "1.6"
+                        }}
+                      >
+                        {event.event_text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
