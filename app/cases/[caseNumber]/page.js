@@ -1328,6 +1328,34 @@ export default function CaseDetailsPage() {
     }
   }
 
+  const downloadFile = async (file) => {
+    try {
+      if (!file?.signedUrl) {
+        setFilesMessage("Download link is not available.")
+        return
+      }
+
+      const response = await fetch(file.signedUrl)
+      if (!response.ok) {
+        throw new Error("Failed to download file.")
+      }
+
+      const blob = await response.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+
+      link.href = blobUrl
+      link.download = file.file_name || "download"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (error) {
+      setFilesMessage(error.message || "Failed to download file.")
+    }
+  }
+
   const deleteFile = async (file) => {
     if (currentRole !== "admin") {
       setFilesMessage("Only admin can delete files.")
@@ -1715,18 +1743,28 @@ export default function CaseDetailsPage() {
                           }}
                         >
                           {file.signedUrl && (
-                            <a
-                              href={file.signedUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: "#685B60",
-                                fontWeight: "600",
-                                textDecoration: "none"
-                              }}
-                            >
-                              Open File
-                            </a>
+                            <>
+                              <a
+                                href={file.signedUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: "#685B60",
+                                  fontWeight: "600",
+                                  textDecoration: "none"
+                                }}
+                              >
+                                Open File
+                              </a>
+
+                              <button
+                                type="button"
+                                onClick={() => downloadFile(file)}
+                                style={secondaryButtonStyle}
+                              >
+                                Download
+                              </button>
+                            </>
                           )}
 
                           {currentRole === "admin" && (
@@ -2048,18 +2086,28 @@ export default function CaseDetailsPage() {
                           )}
 
                           {file.signedUrl && (
-                            <a
-                              href={file.signedUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: "#685B60",
-                                fontWeight: "600",
-                                textDecoration: "none"
-                              }}
-                            >
-                              Open File
-                            </a>
+                            <>
+                              <a
+                                href={file.signedUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: "#685B60",
+                                  fontWeight: "600",
+                                  textDecoration: "none"
+                                }}
+                              >
+                                Open File
+                              </a>
+
+                              <button
+                                type="button"
+                                onClick={() => downloadFile(file)}
+                                style={secondaryButtonStyle}
+                              >
+                                Download
+                              </button>
+                            </>
                           )}
 
                           {currentRole === "admin" && (
