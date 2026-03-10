@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import Sidebar from "../../components/Sidebar"
-import { supabase } from "../../lib/supabase"
+import { createClient } from "../../utils/supabase/client"
 
 const tableHeadStyle = {
   textAlign: "left",
@@ -76,30 +76,6 @@ function getStatusStyle(status) {
   }
 }
 
-function getAssignmentStyle(name) {
-  if (name) {
-    return {
-      padding: "6px 12px",
-      borderRadius: "10px",
-      fontSize: "12px",
-      fontWeight: "600",
-      display: "inline-block",
-      background: "#E8F1FF",
-      color: "#1E40AF"
-    }
-  }
-
-  return {
-    padding: "6px 12px",
-    borderRadius: "10px",
-    fontSize: "12px",
-    fontWeight: "600",
-    display: "inline-block",
-    background: "#F1F1F1",
-    color: "#685B60"
-  }
-}
-
 function StatCard({ title, value }) {
   return (
     <div style={statCardStyle}>
@@ -159,9 +135,19 @@ function formatDateTime(value) {
   return `${datePart}, ${timePart}`
 }
 
+function buildActorLabel(profile, user) {
+  if (profile?.full_name?.trim()) return profile.full_name.trim()
+  if (profile?.email?.trim()) return profile.email.trim()
+  if (user?.email?.trim()) return user.email.trim()
+  return "User"
+}
+
 export default function CasesPage() {
   const [cases, setCases] = useState([])
   const [designers, setDesigners] = useState([])
+  const [currentRole, setCurrentRole] = useState("")
+  const [currentProfile, setCurrentProfile] = useState(null)
+  const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
   const [search, setSearch] = useState("")
@@ -171,41 +157,75 @@ export default function CasesPage() {
   const [savingAssignmentId, setSavingAssignmentId] = useState("")
 
   useEffect(() => {
-    fetchCases()
-    fetchDesigners()
+    loadPage()
   }, [])
 
-  const fetchDesigners = async () => {
-    const { data } = await supabase
-      .from("designers")
-      .select("*")
-      .eq("is_active", true)
-      .order("full_name", { ascending: true })
+  const loadPage = async () => {
+    const supabase = createClient()
 
-    setDesigners(data || [])
-  }
-
-  const fetchCases = async () => {
     setLoading(true)
     setMessage("")
 
-    const { data, error } = await supabase
-      .from("cases")
-      .select("*")
-      .order("created_at", { ascending: false })
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
 
-    if (error) {
-      setMessage(error.message)
+    if (userError || !user) {
+      setMessage("Unable to load the logged-in user.")
+      setLoading(false)
+      return
+    }
+
+    setCurrentUser(user)
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, is_active")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (profileError || !profile) {
+      setMessage(profileError?.message || "Unable to load the user profile.")
+      setLoading(false)
+      return
+    }
+
+    setCurrentProfile(profile)
+    setCurrentRole(profile.role || "")
+
+    const [{ data: casesData, error: casesError }, { data: designersData, error: designersError }] =
+      await Promise.all([
+        supabase
+          .from("cases")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("designers")
+          .select("*")
+          .eq("is_active", true)
+          .order("full_name", { ascending: true })
+      ])
+
+    if (casesError) {
+      setMessage(casesError.message)
+      setLoading(false)
+      return
+    }
+
+    if (designersError && (profile.role === "admin" || profile.role === "designer")) {
+      setMessage(designersError.message)
       setLoading(false)
       return
     }
 
     setCases(
-      (data || []).map((item) => ({
+      (casesData || []).map((item) => ({
         ...item,
         assignmentDraftId: item.assigned_designer_id || ""
       }))
     )
+    setDesigners(designersData || [])
     setLoading(false)
   }
 
@@ -276,7 +296,30 @@ export default function CasesPage() {
     (item) => item.status === "Delivered"
   ).length
 
+  const canManageAssignments = currentRole === "admin" || currentRole === "designer"
+  const actorLabel = buildActorLabel(currentProfile, currentUser)
+
+  const insertAssignmentLogs = async (supabase, caseId, timelineText, noteText) => {
+    await Promise.all([
+      supabase.from("case_timeline").insert([
+        {
+          case_id: caseId,
+          event_type: timelineText.toLowerCase().includes("unassigned") ? "case_unassigned" : "case_assigned",
+          event_text: timelineText
+        }
+      ]),
+      supabase.from("case_notes").insert([
+        {
+          case_id: caseId,
+          note_text: noteText
+        }
+      ])
+    ])
+  }
+
   const updateAssignmentDraft = async (caseItem, selectedDesignerId) => {
+    if (!canManageAssignments) return
+
     if (!selectedDesignerId) {
       setCases((prev) =>
         prev.map((item) =>
@@ -299,6 +342,8 @@ export default function CasesPage() {
       return
     }
 
+    const supabase = createClient()
+
     setSavingAssignmentId(caseItem.id)
     setMessage("")
 
@@ -320,15 +365,11 @@ export default function CasesPage() {
       ? `Case reassigned from ${caseItem.assigned_designer_name} to ${selectedDesigner.full_name}`
       : `Case assigned to ${selectedDesigner.full_name}`
 
-    await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseItem.id,
-          event_type: "case_assigned",
-          event_text: timelineText
-        }
-      ])
+    const noteText = caseItem.assigned_designer_name
+      ? `${actorLabel} reassigned this case from ${caseItem.assigned_designer_name} to ${selectedDesigner.full_name}.`
+      : `${actorLabel} assigned this case to ${selectedDesigner.full_name}.`
+
+    await insertAssignmentLogs(supabase, caseItem.id, timelineText, noteText)
 
     setCases((prev) =>
       prev.map((item) =>
@@ -347,6 +388,8 @@ export default function CasesPage() {
   }
 
   const unassignDesigner = async (caseItem) => {
+    if (!canManageAssignments) return
+
     if (!caseItem.assigned_designer_name) {
       setMessage("This case is already unassigned.")
       return
@@ -355,8 +398,12 @@ export default function CasesPage() {
     const confirmed = window.confirm(`Unassign ${caseItem.assigned_designer_name} from case ${caseItem.case_number}?`)
     if (!confirmed) return
 
+    const supabase = createClient()
+
     setSavingAssignmentId(caseItem.id)
     setMessage("")
+
+    const previousDesignerName = caseItem.assigned_designer_name
 
     const { error } = await supabase
       .from("cases")
@@ -372,15 +419,10 @@ export default function CasesPage() {
       return
     }
 
-    await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseItem.id,
-          event_type: "case_unassigned",
-          event_text: `Case unassigned from ${caseItem.assigned_designer_name}`
-        }
-      ])
+    const timelineText = `Case unassigned from ${previousDesignerName}`
+    const noteText = `${actorLabel} unassigned this case from ${previousDesignerName}.`
+
+    await insertAssignmentLogs(supabase, caseItem.id, timelineText, noteText)
 
     setCases((prev) =>
       prev.map((item) =>
@@ -434,7 +476,7 @@ export default function CasesPage() {
               fontSize: "16px"
             }}
           >
-            View all submitted cases
+            {canManageAssignments ? "View and manage all submitted cases" : "View all submitted cases"}
           </p>
         </div>
 
@@ -464,7 +506,9 @@ export default function CasesPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(220px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1fr) minmax(200px, 1fr)",
+              gridTemplateColumns: canManageAssignments
+                ? "minmax(220px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1fr) minmax(200px, 1fr)"
+                : "minmax(220px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1fr)",
               gap: "14px",
               marginBottom: "20px"
             }}
@@ -503,22 +547,24 @@ export default function CasesPage() {
               ))}
             </select>
 
-            <select
-              style={inputStyle}
-              value={assignmentFilter}
-              onChange={(e) => setAssignmentFilter(e.target.value)}
-            >
-              <option value="">All Assignments</option>
-              <option value="Unassigned">Unassigned</option>
-              {assignmentOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            {canManageAssignments && (
+              <select
+                style={inputStyle}
+                value={assignmentFilter}
+                onChange={(e) => setAssignmentFilter(e.target.value)}
+              >
+                <option value="">All Assignments</option>
+                <option value="Unassigned">Unassigned</option>
+                {assignmentOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {(search || statusFilter || serviceFilter || assignmentFilter) && (
+          {(search || statusFilter || serviceFilter || (canManageAssignments && assignmentFilter)) && (
             <div
               style={{
                 marginBottom: "18px",
@@ -557,10 +603,7 @@ export default function CasesPage() {
           )}
 
           {loading && <p style={{ color: "#685B60" }}>Loading cases...</p>}
-
-          {message && !loading && (
-            <p style={{ color: "#685B60" }}>{message}</p>
-          )}
+          {message && !loading && <p style={{ color: "#685B60" }}>{message}</p>}
 
           {!loading && !message && (
             <div style={{ overflowX: "auto" }}>
@@ -599,75 +642,74 @@ export default function CasesPage() {
                           {item.patient_first_name} {item.patient_last_name}
                         </td>
 
-                        <td style={tableCellStyle}>{item.tooth_number}</td>
-
-                        <td style={tableCellStyle}>{item.service_type}</td>
-
-                        <td style={tableCellStyle}>{item.implant_type}</td>
-
-                        <td style={tableCellStyle}>{item.surgical_kit}</td>
+                        <td style={tableCellStyle}>{item.tooth_number || "-"}</td>
+                        <td style={tableCellStyle}>{item.service_type || "-"}</td>
+                        <td style={tableCellStyle}>{item.implant_type || "-"}</td>
+                        <td style={tableCellStyle}>{item.surgical_kit || "-"}</td>
 
                         <td style={tableCellStyle}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              minWidth: "260px"
-                            }}
-                          >
-                            <select
+                          {canManageAssignments ? (
+                            <div
                               style={{
-                                ...inputStyle,
-                                minWidth: "220px",
-                                padding: "10px 12px",
-                                opacity: savingAssignmentId === item.id ? 0.7 : 1,
-                                background: item.assigned_designer_name ? "#E8F1FF" : "#FFFFFF",
-                                color: item.assigned_designer_name ? "#1E40AF" : "#685B60",
-                                border: item.assigned_designer_name
-                                  ? "1px solid #B6CCFF"
-                                  : "1px solid #E7D9E3",
-                                fontWeight: item.assigned_designer_name ? "600" : "400"
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                minWidth: "260px"
                               }}
-                              value={item.assignmentDraftId || ""}
-                              disabled={savingAssignmentId === item.id || item.status === "Delivered"}
-                              onChange={(e) => updateAssignmentDraft(item, e.target.value)}
                             >
-                              <option value="">Unassigned</option>
-                              {designers.map((designer) => (
-                                <option key={designer.id} value={designer.id}>
-                                  {designer.full_name}
-                                </option>
-                              ))}
-                            </select>
-
-                            {item.assigned_designer_name && (
-                              <button
-                                type="button"
-                                onClick={() => unassignDesigner(item)}
-                                disabled={savingAssignmentId === item.id}
+                              <select
                                 style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  color: "#B42318",
-                                  fontSize: "18px",
-                                  lineHeight: 1,
-                                  cursor: "pointer",
-                                  padding: 0,
-                                  opacity: savingAssignmentId === item.id ? 0.5 : 1
+                                  ...inputStyle,
+                                  minWidth: "220px",
+                                  padding: "10px 12px",
+                                  opacity: savingAssignmentId === item.id ? 0.7 : 1,
+                                  background: item.assigned_designer_name ? "#E8F1FF" : "#FFFFFF",
+                                  color: item.assigned_designer_name ? "#1E40AF" : "#685B60",
+                                  border: item.assigned_designer_name
+                                    ? "1px solid #B6CCFF"
+                                    : "1px solid #E7D9E3",
+                                  fontWeight: item.assigned_designer_name ? "600" : "400"
                                 }}
-                                title="Unassign case"
+                                value={item.assignmentDraftId || ""}
+                                disabled={savingAssignmentId === item.id || item.status === "Delivered"}
+                                onChange={(e) => updateAssignmentDraft(item, e.target.value)}
                               >
-                                ×
-                              </button>
-                            )}
-                          </div>
+                                <option value="">Unassigned</option>
+                                {designers.map((designer) => (
+                                  <option key={designer.id} value={designer.id}>
+                                    {designer.full_name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {item.assigned_designer_name && (
+                                <button
+                                  type="button"
+                                  onClick={() => unassignDesigner(item)}
+                                  disabled={savingAssignmentId === item.id}
+                                  style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    color: "#B42318",
+                                    fontSize: "18px",
+                                    lineHeight: 1,
+                                    cursor: "pointer",
+                                    padding: 0,
+                                    opacity: savingAssignmentId === item.id ? 0.5 : 1
+                                  }}
+                                  title="Unassign case"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            item.assigned_designer_name || "Unassigned"
+                          )}
                         </td>
 
                         <td style={tableCellStyle}>{formatDate(item.surgical_date)}</td>
-
                         <td style={tableCellStyle}>{formatDateTime(item.created_at)}</td>
-
                         <td style={tableCellStyle}>
                           <span style={getStatusStyle(item.status)}>
                             {item.status}

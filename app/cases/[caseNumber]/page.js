@@ -1,9 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Sidebar from "../../../components/Sidebar"
-import { supabase } from "../../../lib/supabase"
+import { createClient } from "../../../utils/supabase/client"
+
+const DISPLAY_TIMEZONE = "Africa/Cairo"
 
 const cardStyle = {
   background: "#FFFFFF",
@@ -66,7 +68,7 @@ const deleteButtonStyle = {
   cursor: "pointer"
 }
 
-const statusOptions = [
+const allStatusOptions = [
   "New Case",
   "Pending Info",
   "In Design",
@@ -76,91 +78,72 @@ const statusOptions = [
   "Cancelled"
 ]
 
+const allowedActivityEventTypes = [
+  "file_uploaded",
+  "case_info_updated",
+  "status_changed",
+  "case_created",
+  "case_assigned",
+  "case_unassigned"
+]
+
+function parseAppDate(value) {
+  if (!value) return null
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
+  const text = String(value).trim()
+  if (!text) return null
+
+  const hasTimezone =
+    text.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(text)
+
+  const normalized = hasTimezone ? text : `${text}Z`
+  const date = new Date(normalized)
+
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date
+}
+
 function formatDate(value) {
   if (!value) return "-"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseAppDate(value)
+  if (!date) return String(value)
 
   return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
     day: "2-digit",
-    year: "numeric"
+    year: "numeric",
+    timeZone: DISPLAY_TIMEZONE
   }).format(date)
 }
 
 function formatDateTime(value) {
   if (!value) return "-"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseAppDate(value)
+  if (!date) return String(value)
 
   const datePart = new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
     day: "2-digit",
-    year: "numeric"
+    year: "numeric",
+    timeZone: DISPLAY_TIMEZONE
   }).format(date)
 
   const timePart = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: DISPLAY_TIMEZONE,
     timeZoneName: "short"
   }).format(date)
 
   return `${datePart}, ${timePart}`
-}
-
-function getTimelineBadgeStyle(eventType) {
-  const base = {
-    padding: "4px 10px",
-    borderRadius: "999px",
-    fontSize: "12px",
-    fontWeight: "600",
-    display: "inline-block"
-  }
-
-  switch (eventType) {
-    case "case_created":
-      return { ...base, background: "#E3EDFF", color: "#1D4ED8" }
-    case "status_changed":
-      return { ...base, background: "#EFE6FF", color: "#6D28D9" }
-    case "note_added":
-      return { ...base, background: "#FFF4E5", color: "#B45309" }
-    case "file_uploaded":
-      return { ...base, background: "#DFF5E3", color: "#1B7A34" }
-    case "file_deleted":
-      return { ...base, background: "#FFE3E3", color: "#B42318" }
-    case "case_info_updated":
-      return { ...base, background: "#F3E8FF", color: "#7C3AED" }
-    case "case_assigned":
-      return { ...base, background: "#E8F1FF", color: "#1E40AF" }
-    case "case_unassigned":
-      return { ...base, background: "#F3F4F6", color: "#4B5563" }
-    default:
-      return { ...base, background: "#F1F1F1", color: "#555" }
-  }
-}
-
-function getTimelineLabel(eventType) {
-  switch (eventType) {
-    case "case_created":
-      return "Case Created"
-    case "status_changed":
-      return "Status Updated"
-    case "note_added":
-      return "Note Added"
-    case "file_uploaded":
-      return "File Uploaded"
-    case "file_deleted":
-      return "File Deleted"
-    case "case_info_updated":
-      return "Case Info Updated"
-    case "case_assigned":
-      return "Case Assigned"
-    case "case_unassigned":
-      return "Case Unassigned"
-    default:
-      return "Event"
-  }
 }
 
 function detectFileType(file) {
@@ -251,6 +234,265 @@ function isImageFile(file) {
   )
 }
 
+function buildActorLabel(profile, user) {
+  if (profile?.full_name?.trim()) return profile.full_name.trim()
+  if (profile?.email?.trim()) return profile.email.trim()
+  if (user?.email?.trim()) return user.email.trim()
+  return "User"
+}
+
+function getActivityBadgeStyle(type) {
+  const base = {
+    padding: "4px 10px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: "600",
+    display: "inline-block"
+  }
+
+  switch (type) {
+    case "file_uploaded":
+      return { ...base, background: "#DFF5E3", color: "#1B7A34" }
+    case "case_info_updated":
+      return { ...base, background: "#F3E8FF", color: "#7C3AED" }
+    case "status_changed":
+      return { ...base, background: "#EFE6FF", color: "#6D28D9" }
+    case "case_created":
+      return { ...base, background: "#E3EDFF", color: "#1D4ED8" }
+    case "note_added":
+      return { ...base, background: "#FFF4E5", color: "#B45309" }
+    case "case_assigned":
+      return { ...base, background: "#E8F1FF", color: "#1E40AF" }
+    default:
+      return { ...base, background: "#F1F1F1", color: "#555" }
+  }
+}
+
+function getActivityBadgeLabel(type) {
+  switch (type) {
+    case "file_uploaded":
+      return "File Uploaded"
+    case "case_info_updated":
+      return "Case Info Updated"
+    case "status_changed":
+      return "Status Updated"
+    case "case_created":
+      return "Case Created"
+    case "note_added":
+      return "Note Added"
+    case "case_assigned":
+      return "Case Assigned"
+    default:
+      return "Activity"
+  }
+}
+
+function extractAfterColon(text) {
+  const idx = String(text || "").indexOf(":")
+  if (idx === -1) return ""
+  return String(text).slice(idx + 1).trim()
+}
+
+function extractStatusChange(text) {
+  const match = String(text || "").match(/from\s+(.+?)\s+to\s+(.+)$/i)
+  if (!match) return ""
+  return `from ${match[1]} to ${match[2]}`
+}
+
+function extractAssignedTarget(text) {
+  const matchTo = String(text || "").match(/\bto\s+(.+)$/i)
+  if (matchTo) return matchTo[1].trim()
+
+  const matchFrom = String(text || "").match(/\bfrom\s+(.+)$/i)
+  if (matchFrom) return matchFrom[1].trim()
+
+  return ""
+}
+
+function replaceDesignerNamesWithRole(text, designers) {
+  let result = String(text || "")
+
+  ;(designers || []).forEach((designer) => {
+    const fullName = String(designer?.full_name || "").trim()
+    if (!fullName) return
+    const escaped = fullName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    result = result.replace(new RegExp(escaped, "gi"), "Designer")
+  })
+
+  return result
+}
+
+function looksLikeSystemGeneratedNote(noteText) {
+  const text = String(noteText || "").trim().toLowerCase()
+
+  return (
+    text.includes("assigned case to") ||
+    text.includes("unassigned case from") ||
+    text.includes("updated case info:") ||
+    text.includes("updated status from") ||
+    text.includes("created case (") ||
+    text.startsWith("status changed from ") ||
+    text.includes("reassigned this case from") ||
+    text.includes("assigned this case to") ||
+    text.includes("unassigned this case from") ||
+    text.includes("changed the case status from") ||
+    text.includes("updated case information:")
+  )
+}
+
+function getActorDisplayName({
+  item,
+  currentRole,
+  currentUser,
+  currentProfile,
+  designers,
+  activityProfiles
+}) {
+  const createdById = item.created_by_user_id || null
+  const isSelf = createdById && currentUser?.id && createdById === currentUser.id
+
+  if (currentRole === "dentist") {
+    if (isSelf) {
+      return buildActorLabel(currentProfile, currentUser)
+    }
+
+    const creatorProfile = createdById ? activityProfiles?.[createdById] : null
+    const creatorRole = String(creatorProfile?.role || "").toLowerCase()
+
+    if (creatorRole === "designer") {
+      return "Designer"
+    }
+
+    if (creatorRole === "admin") {
+      return "Admin"
+    }
+
+    const creatorDesigner = (designers || []).find(
+      (designer) => designer.id === createdById
+    )
+
+    if (creatorDesigner) {
+      return "Designer"
+    }
+
+    return "Admin"
+  }
+
+  if (isSelf) {
+    return buildActorLabel(currentProfile, currentUser)
+  }
+
+  const creatorProfile = createdById ? activityProfiles?.[createdById] : null
+
+  if (creatorProfile?.full_name && String(creatorProfile.full_name).trim()) {
+    return String(creatorProfile.full_name).trim()
+  }
+
+  if (creatorProfile?.email && String(creatorProfile.email).trim()) {
+    return String(creatorProfile.email).trim()
+  }
+
+  const creatorDesigner = (designers || []).find(
+    (designer) => designer.id === createdById
+  )
+
+  if (creatorDesigner?.full_name) {
+    return creatorDesigner.full_name
+  }
+
+  if (item.created_by_name && String(item.created_by_name).trim()) {
+    return String(item.created_by_name).trim()
+  }
+
+  return "Admin"
+}
+
+function buildActivityText({
+  item,
+  currentRole,
+  currentUser,
+  currentProfile,
+  designers,
+  activityProfiles,
+  caseData
+}) {
+  const actor = getActorDisplayName({
+    item,
+    currentRole,
+    currentUser,
+    currentProfile,
+    designers,
+    activityProfiles
+  })
+
+  if (item.activity_type === "note_added") {
+    if (currentRole === "dentist" && item.created_by_user_id !== currentUser?.id) {
+      return `"${String(item.text || "").trim()}"`
+    }
+
+    return `${actor} added "${String(item.text || "").trim()}"`
+  }
+
+  if (item.activity_type === "file_uploaded") {
+    const fileName = extractAfterColon(item.text)
+    return `${actor} uploaded file: ${fileName || "file"}`
+  }
+
+  if (item.activity_type === "case_info_updated") {
+    const details = extractAfterColon(item.text) || String(item.text || "").trim()
+    return `${actor} updated case info: ${details}`
+  }
+
+  if (item.activity_type === "status_changed") {
+    const details = extractStatusChange(item.text)
+    return details
+      ? `${actor} updated status ${details}`
+      : `${actor} updated status`
+  }
+
+  if (item.activity_type === "case_created") {
+    const caseNumber = caseData?.case_number ? ` (${caseData.case_number})` : ""
+    return `${actor} created case${caseNumber}`
+  }
+
+  if (item.activity_type === "case_assigned") {
+    const targetRaw = extractAssignedTarget(item.text)
+    const target =
+      currentRole === "dentist"
+        ? replaceDesignerNamesWithRole(targetRaw, designers)
+        : targetRaw
+
+    return `${actor} assigned case to ${target || "Designer"}`
+  }
+
+  return String(item.text || "").trim()
+}
+
+function dedupeActivityItems(items) {
+  const seen = new Set()
+
+  return items.filter((item) => {
+    const minuteKey = (() => {
+      const date = parseAppDate(item.created_at)
+      if (!date) return String(item.created_at || "")
+      return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}-${date.getUTCHours()}-${date.getUTCMinutes()}`
+    })()
+
+    const normalizedText = String(item.text || "").trim().toLowerCase()
+
+    const key = [
+      item.activity_type,
+      item.created_by_user_id || "",
+      minuteKey,
+      normalizedText
+    ].join("|")
+
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export default function CaseDetailsPage() {
   const params = useParams()
   const caseId = params?.caseNumber
@@ -260,9 +502,12 @@ export default function CaseDetailsPage() {
   const [timeline, setTimeline] = useState([])
   const [files, setFiles] = useState([])
   const [designers, setDesigners] = useState([])
+  const [activityProfiles, setActivityProfiles] = useState({})
   const [selectedDesignerId, setSelectedDesignerId] = useState("")
   const [selectedFiles, setSelectedFiles] = useState([])
+  const [selectedFinalDesignFiles, setSelectedFinalDesignFiles] = useState([])
   const [fileInputKey, setFileInputKey] = useState(0)
+  const [finalDesignInputKey, setFinalDesignInputKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
   const [savingStatus, setSavingStatus] = useState(false)
@@ -274,8 +519,15 @@ export default function CaseDetailsPage() {
   const [savingNote, setSavingNote] = useState(false)
   const [notesMessage, setNotesMessage] = useState("")
   const [uploadingFiles, setUploadingFiles] = useState(false)
+  const [uploadingFinalDesign, setUploadingFinalDesign] = useState(false)
   const [filesMessage, setFilesMessage] = useState("")
+  const [finalDesignMessage, setFinalDesignMessage] = useState("")
   const [viewerImage, setViewerImage] = useState(null)
+  const [currentRole, setCurrentRole] = useState("")
+  const [currentProfile, setCurrentProfile] = useState(null)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [dentistDisplayName, setDentistDisplayName] = useState("")
+  const [noteVisibleToDentist, setNoteVisibleToDentist] = useState(false)
 
   const [status, setStatus] = useState("")
   const [editableImplantType, setEditableImplantType] = useState("")
@@ -286,26 +538,13 @@ export default function CaseDetailsPage() {
   useEffect(() => {
     if (caseId) {
       fetchCaseDetails()
-      fetchDesigners()
     } else {
       setLoading(false)
       setMessage("Case ID not found in URL.")
     }
   }, [caseId])
 
-  const fetchDesigners = async () => {
-    const { data, error } = await supabase
-      .from("designers")
-      .select("*")
-      .eq("is_active", true)
-      .order("full_name", { ascending: true })
-
-    if (!error) {
-      setDesigners(data || [])
-    }
-  }
-
-  const fetchFilesWithUrls = async (casePrimaryId) => {
+  const fetchFilesWithUrls = async (supabase, casePrimaryId) => {
     const { data: filesData, error: filesError } = await supabase
       .from("case_files")
       .select("*")
@@ -334,6 +573,8 @@ export default function CaseDetailsPage() {
   }
 
   const fetchCaseDetails = async () => {
+    const supabase = createClient()
+
     setLoading(true)
     setMessage("")
     setStatusMessage("")
@@ -341,8 +582,37 @@ export default function CaseDetailsPage() {
     setAssignmentMessage("")
     setNotesMessage("")
     setFilesMessage("")
+    setFinalDesignMessage("")
 
     const decodedCaseId = decodeURIComponent(caseId)
+
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      setMessage("Unable to load the logged-in user.")
+      setLoading(false)
+      return
+    }
+
+    setCurrentUser(user)
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, is_active")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (profileError || !profile) {
+      setMessage(profileError?.message || "Unable to load the user profile.")
+      setLoading(false)
+      return
+    }
+
+    setCurrentProfile(profile)
+    setCurrentRole(profile.role || "")
 
     const { data, error } = await supabase
       .from("cases")
@@ -369,41 +639,212 @@ export default function CaseDetailsPage() {
     setEditableSurgicalDate(data.surgical_date || "")
     setSelectedDesignerId(data.assigned_designer_id || "")
 
-    const { data: notesData, error: notesError } = await supabase
-      .from("case_notes")
-      .select("*")
-      .eq("case_id", decodedCaseId)
-      .order("created_at", { ascending: false })
+    let resolvedDentistName =
+      data.dentist_name ||
+      data.dentist_email ||
+      "-"
 
-    if (notesError) {
-      setMessage(`Error: ${notesError.message}`)
+    if (data.dentist_user_id) {
+      const { data: dentistProfile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", data.dentist_user_id)
+        .maybeSingle()
+
+      if (dentistProfile?.full_name?.trim()) {
+        resolvedDentistName = dentistProfile.full_name.trim()
+      } else if (dentistProfile?.email?.trim()) {
+        resolvedDentistName = dentistProfile.email.trim()
+      }
+    }
+
+    setDentistDisplayName(resolvedDentistName)
+
+    const [notesResult, timelineResult, designersResult] = await Promise.all([
+      supabase
+        .from("case_notes")
+        .select("*")
+        .eq("case_id", decodedCaseId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("case_timeline")
+        .select("*")
+        .eq("case_id", decodedCaseId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("designers")
+        .select("*")
+        .eq("is_active", true)
+        .order("full_name", { ascending: true })
+    ])
+
+    if (notesResult.error) {
+      setMessage(`Error: ${notesResult.error.message}`)
       setLoading(false)
       return
     }
 
-    const { data: timelineData, error: timelineError } = await supabase
-      .from("case_timeline")
-      .select("*")
-      .eq("case_id", decodedCaseId)
-      .order("created_at", { ascending: false })
+    if (timelineResult.error) {
+      setMessage(`Error: ${timelineResult.error.message}`)
+      setLoading(false)
+      return
+    }
 
-    if (timelineError) {
-      setMessage(`Error: ${timelineError.message}`)
+    if (designersResult.error && (profile.role === "admin" || profile.role === "designer")) {
+      setMessage(`Error: ${designersResult.error.message}`)
       setLoading(false)
       return
     }
 
     try {
-      await fetchFilesWithUrls(decodedCaseId)
+      await fetchFilesWithUrls(supabase, decodedCaseId)
     } catch (fileErr) {
       setMessage(`Error: ${fileErr.message}`)
       setLoading(false)
       return
     }
 
-    setCaseNotes(notesData || [])
-    setTimeline(timelineData || [])
+    const notesData = notesResult.data || []
+    const timelineData = timelineResult.data || []
+    const designersData = designersResult.data || []
+
+    setCaseNotes(notesData)
+    setTimeline(timelineData)
+    setDesigners(designersData)
+
+    const creatorIds = [
+      ...new Set(
+        [...notesData, ...timelineData]
+          .map((item) => item.created_by_user_id)
+          .filter(Boolean)
+      )
+    ]
+
+    if (creatorIds.length > 0) {
+      const { data: creatorProfiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, role")
+        .in("id", creatorIds)
+
+      const mappedProfiles = (creatorProfiles || []).reduce((acc, item) => {
+        acc[item.id] = item
+        return acc
+      }, {})
+
+      setActivityProfiles(mappedProfiles)
+    } else {
+      setActivityProfiles({})
+    }
+
     setLoading(false)
+  }
+
+  const addSystemTimelineOnly = async (supabase, timelineEntry) => {
+    const { data } = await supabase
+      .from("case_timeline")
+      .insert([
+        {
+          ...timelineEntry,
+          created_by_user_id: currentUser.id
+        }
+      ])
+      .select()
+
+    if (data?.[0]) {
+      setTimeline((prev) => [data[0], ...prev])
+    }
+  }
+
+  const makeNoteVisibleToDentist = async (noteId) => {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+      .from("case_notes")
+      .update({ visible_to_dentist: true })
+      .eq("id", noteId)
+      .select()
+
+    if (error) {
+      setNotesMessage(`Error: ${error.message}`)
+      return
+    }
+
+    if (data?.[0]) {
+      setCaseNotes((prev) =>
+        prev.map((item) =>
+          item.id === noteId ? { ...item, visible_to_dentist: true } : item
+        )
+      )
+    }
+  }
+
+  const makeTimelineVisibleToDentist = async (timelineId) => {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+      .from("case_timeline")
+      .update({ visible_to_dentist: true })
+      .eq("id", timelineId)
+      .select()
+
+    if (error) {
+      setNotesMessage(`Error: ${error.message}`)
+      return
+    }
+
+    if (data?.[0]) {
+      setTimeline((prev) =>
+        prev.map((item) =>
+          item.id === timelineId ? { ...item, visible_to_dentist: true } : item
+        )
+      )
+    }
+  }
+
+  const hideNoteFromDentist = async (noteId) => {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+      .from("case_notes")
+      .update({ visible_to_dentist: false })
+      .eq("id", noteId)
+      .select()
+
+    if (error) {
+      setNotesMessage(`Error: ${error.message}`)
+      return
+    }
+
+    if (data?.[0]) {
+      setCaseNotes((prev) =>
+        prev.map((item) =>
+          item.id === noteId ? { ...item, visible_to_dentist: false } : item
+        )
+      )
+    }
+  }
+
+  const hideTimelineFromDentist = async (timelineId) => {
+    const supabase = createClient()
+
+    const { data, error } = await supabase
+      .from("case_timeline")
+      .update({ visible_to_dentist: false })
+      .eq("id", timelineId)
+      .select()
+
+    if (error) {
+      setNotesMessage(`Error: ${error.message}`)
+      return
+    }
+
+    if (data?.[0]) {
+      setTimeline((prev) =>
+        prev.map((item) =>
+          item.id === timelineId ? { ...item, visible_to_dentist: false } : item
+        )
+      )
+    }
   }
 
   const updateStatus = async () => {
@@ -417,12 +858,18 @@ export default function CaseDetailsPage() {
       return
     }
 
+    if (currentRole === "dentist" && status !== "Cancelled") {
+      setStatusMessage("Dentists can only cancel the case.")
+      return
+    }
+
+    const supabase = createClient()
+
     setSavingStatus(true)
     setStatusMessage("")
 
     const oldStatus = caseData.status || "Unknown"
-    const wasAssigned = !!caseData.assigned_designer_name
-    const previousDesignerName = caseData.assigned_designer_name || ""
+    const actorLabel = buildActorLabel(currentProfile, currentUser)
 
     const updatePayload = { status }
 
@@ -442,44 +889,20 @@ export default function CaseDetailsPage() {
       return
     }
 
-    const timelineEntries = [
-      {
-        case_id: caseData.id,
-        event_type: "status_changed",
-        event_text: `Status changed from ${oldStatus} to ${status}`
-      }
-    ]
+    await addSystemTimelineOnly(supabase, {
+      case_id: caseData.id,
+      event_type: "status_changed",
+      event_text: `${actorLabel} updated status from ${oldStatus} to ${status}`,
+      visible_to_dentist: currentRole === "dentist"
+    })
 
-    if (status === "Delivered" && wasAssigned) {
-      timelineEntries.push({
-        case_id: caseData.id,
-        event_type: "case_unassigned",
-        event_text: `Case automatically unassigned from ${previousDesignerName} after delivery`
-      })
-    }
-
-    const { data: timelineInsert } = await supabase
-      .from("case_timeline")
-      .insert(timelineEntries)
-      .select()
-
-    const updatedCase = {
+    setCaseData({
       ...caseData,
       ...updatePayload
-    }
-
-    setCaseData(updatedCase)
+    })
     setSelectedDesignerId(status === "Delivered" ? "" : (caseData.assigned_designer_id || ""))
 
-    if (timelineInsert?.length) {
-      setTimeline([...timelineInsert.reverse(), ...timeline])
-    }
-
-    setStatusMessage(
-      status === "Delivered" && wasAssigned
-        ? "Status updated and case automatically unassigned."
-        : "Status updated successfully."
-    )
+    setStatusMessage("Status updated successfully.")
     setSavingStatus(false)
   }
 
@@ -505,6 +928,8 @@ export default function CaseDetailsPage() {
       setCaseInfoMessage("No changes to save.")
       return
     }
+
+    const supabase = createClient()
 
     setSavingCaseInfo(true)
     setCaseInfoMessage("")
@@ -542,29 +967,21 @@ export default function CaseDetailsPage() {
       )
     }
 
-    const { data: timelineInsert } = await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseData.id,
-          event_type: "case_info_updated",
-          event_text: changes.join(" | ")
-        }
-      ])
-      .select()
+    const actorLabel = buildActorLabel(currentProfile, currentUser)
 
-    const updatedCaseData = {
+    await addSystemTimelineOnly(supabase, {
+      case_id: caseData.id,
+      event_type: "case_info_updated",
+      event_text: `${actorLabel} updated case info: ${changes.join(" | ")}`,
+      visible_to_dentist: currentRole === "dentist"
+    })
+
+    setCaseData({
       ...caseData,
       implant_type: updatePayload.implant_type,
       surgical_kit: updatePayload.surgical_kit,
       surgical_date: updatePayload.surgical_date
-    }
-
-    setCaseData(updatedCaseData)
-
-    if (timelineInsert?.[0]) {
-      setTimeline([timelineInsert[0], ...timeline])
-    }
+    })
 
     setCaseInfoMessage("Case information updated successfully.")
     setSavingCaseInfo(false)
@@ -573,6 +990,11 @@ export default function CaseDetailsPage() {
   const updateAssignment = async () => {
     if (!caseData?.id) {
       setAssignmentMessage("Case ID is missing.")
+      return
+    }
+
+    if (!(currentRole === "admin" || currentRole === "designer")) {
+      setAssignmentMessage("You do not have permission to assign this case.")
       return
     }
 
@@ -593,11 +1015,13 @@ export default function CaseDetailsPage() {
       return
     }
 
+    const supabase = createClient()
+
     setSavingAssignment(true)
     setAssignmentMessage("")
 
-    const previousDesignerName = caseData.assigned_designer_name || ""
     const nextDesignerName = selectedDesigner.full_name
+    const actorLabel = buildActorLabel(currentProfile, currentUser)
 
     const { error } = await supabase
       .from("cases")
@@ -613,20 +1037,12 @@ export default function CaseDetailsPage() {
       return
     }
 
-    const timelineText = previousDesignerName
-      ? `Case reassigned from ${previousDesignerName} to ${nextDesignerName}`
-      : `Case assigned to ${nextDesignerName}`
-
-    const { data: timelineInsert } = await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseData.id,
-          event_type: "case_assigned",
-          event_text: timelineText
-        }
-      ])
-      .select()
+    await addSystemTimelineOnly(supabase, {
+      case_id: caseData.id,
+      event_type: "case_assigned",
+      event_text: `${actorLabel} assigned case to ${nextDesignerName}`,
+      visible_to_dentist: false
+    })
 
     setCaseData({
       ...caseData,
@@ -634,17 +1050,18 @@ export default function CaseDetailsPage() {
       assigned_designer_name: selectedDesigner.full_name
     })
 
-    if (timelineInsert?.[0]) {
-      setTimeline([timelineInsert[0], ...timeline])
-    }
-
-    setAssignmentMessage(previousDesignerName ? "Designer reassigned successfully." : "Designer assigned successfully.")
+    setAssignmentMessage("Designer assigned successfully.")
     setSavingAssignment(false)
   }
 
   const unassignDesigner = async () => {
     if (!caseData?.id) {
       setAssignmentMessage("Case ID is missing.")
+      return
+    }
+
+    if (!(currentRole === "admin" || currentRole === "designer")) {
+      setAssignmentMessage("You do not have permission to unassign this case.")
       return
     }
 
@@ -656,10 +1073,13 @@ export default function CaseDetailsPage() {
     const confirmed = window.confirm(`Unassign ${caseData.assigned_designer_name} from this case?`)
     if (!confirmed) return
 
+    const supabase = createClient()
+
     setSavingAssignment(true)
     setAssignmentMessage("")
 
     const previousDesignerName = caseData.assigned_designer_name
+    const actorLabel = buildActorLabel(currentProfile, currentUser)
 
     const { error } = await supabase
       .from("cases")
@@ -675,16 +1095,12 @@ export default function CaseDetailsPage() {
       return
     }
 
-    const { data: timelineInsert } = await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseData.id,
-          event_type: "case_unassigned",
-          event_text: `Case unassigned from ${previousDesignerName}`
-        }
-      ])
-      .select()
+    await addSystemTimelineOnly(supabase, {
+      case_id: caseData.id,
+      event_type: "case_unassigned",
+      event_text: `${actorLabel} unassigned case from ${previousDesignerName}`,
+      visible_to_dentist: false
+    })
 
     setCaseData({
       ...caseData,
@@ -692,10 +1108,6 @@ export default function CaseDetailsPage() {
       assigned_designer_name: null
     })
     setSelectedDesignerId("")
-
-    if (timelineInsert?.[0]) {
-      setTimeline([timelineInsert[0], ...timeline])
-    }
 
     setAssignmentMessage("Designer unassigned successfully.")
     setSavingAssignment(false)
@@ -712,15 +1124,21 @@ export default function CaseDetailsPage() {
       return
     }
 
+    const supabase = createClient()
+
     setSavingNote(true)
     setNotesMessage("")
+
+    const visibleToDentist = currentRole === "dentist" ? true : noteVisibleToDentist
 
     const { data, error } = await supabase
       .from("case_notes")
       .insert([
         {
           case_id: caseData.id,
-          note_text: newNote.trim()
+          note_text: newNote.trim(),
+          created_by_user_id: currentUser.id,
+          visible_to_dentist: visibleToDentist
         }
       ])
       .select()
@@ -731,56 +1149,87 @@ export default function CaseDetailsPage() {
       return
     }
 
-    const insertedNote = data?.[0]
+    if (data?.[0]) {
+      setCaseNotes((prev) => [data[0], ...prev])
+      const creatorProfile = currentProfile
+        ? {
+            id: currentProfile.id,
+            full_name: currentProfile.full_name,
+            email: currentProfile.email,
+            role: currentProfile.role
+          }
+        : null
 
-    const { data: timelineInsert } = await supabase
-      .from("case_timeline")
-      .insert([
-        {
-          case_id: caseData.id,
-          event_type: "note_added",
-          event_text: "Note added"
-        }
-      ])
-      .select()
-
-    setCaseNotes(insertedNote ? [insertedNote, ...caseNotes] : caseNotes)
-    if (timelineInsert?.[0]) {
-      setTimeline([timelineInsert[0], ...timeline])
+      if (creatorProfile?.id) {
+        setActivityProfiles((prev) => ({
+          ...prev,
+          [creatorProfile.id]: creatorProfile
+        }))
+      }
     }
+
     setNewNote("")
+    setNoteVisibleToDentist(false)
     setNotesMessage("Note added successfully.")
     setSavingNote(false)
   }
 
-  const uploadFiles = async () => {
+  const uploadFilesBySection = async (section) => {
     if (!caseData?.id) {
-      setFilesMessage("Case ID is missing.")
+      if (section === "final_design") {
+        setFinalDesignMessage("Case ID is missing.")
+      } else {
+        setFilesMessage("Case ID is missing.")
+      }
       return
     }
 
-    if (!selectedFiles.length) {
-      setFilesMessage("Please choose at least one file.")
+    const selectedList = section === "final_design" ? selectedFinalDesignFiles : selectedFiles
+
+    if (!selectedList.length) {
+      if (section === "final_design") {
+        setFinalDesignMessage("Please choose at least one file.")
+      } else {
+        setFilesMessage("Please choose at least one file.")
+      }
       return
     }
 
-    const invalidFiles = selectedFiles.filter((file) => !isAllowedFile(file))
+    const invalidFiles = selectedList.filter((file) => !isAllowedFile(file))
     if (invalidFiles.length > 0) {
-      setFilesMessage(`Unsupported file type: ${invalidFiles[0].name}`)
+      const text = `Unsupported file type: ${invalidFiles[0].name}`
+      if (section === "final_design") {
+        setFinalDesignMessage(text)
+      } else {
+        setFilesMessage(text)
+      }
       return
     }
 
-    setUploadingFiles(true)
-    setFilesMessage("")
+    if (section === "final_design" && !(currentRole === "admin" || currentRole === "designer")) {
+      setFinalDesignMessage("You do not have permission to upload final designs.")
+      return
+    }
+
+    const supabase = createClient()
+
+    if (section === "final_design") {
+      setUploadingFinalDesign(true)
+      setFinalDesignMessage("")
+    } else {
+      setUploadingFiles(true)
+      setFilesMessage("")
+    }
 
     const uploadedRecords = []
     const timelineEntries = []
 
     try {
-      for (const file of selectedFiles) {
+      for (const file of selectedList) {
         const fileType = detectFileType(file)
         const safeName = sanitizeFileName(file.name)
-        const filePath = `${caseData.id}/${Date.now()}-${safeName}`
+        const prefix = section === "final_design" ? "final-design" : "uploads"
+        const filePath = `${caseData.id}/${prefix}/${Date.now()}-${safeName}`
 
         const { error: uploadError } = await supabase
           .storage
@@ -790,9 +1239,7 @@ export default function CaseDetailsPage() {
             contentType: file.type || undefined
           })
 
-        if (uploadError) {
-          throw uploadError
-        }
+        if (uploadError) throw uploadError
 
         const { data: fileRowData, error: fileRowError } = await supabase
           .from("case_files")
@@ -801,14 +1248,13 @@ export default function CaseDetailsPage() {
               case_id: caseData.id,
               file_name: file.name,
               file_path: filePath,
-              file_type: fileType
+              file_type: fileType,
+              file_section: section
             }
           ])
           .select()
 
-        if (fileRowError) {
-          throw fileRowError
-        }
+        if (fileRowError) throw fileRowError
 
         const insertedFile = fileRowData?.[0]
 
@@ -826,7 +1272,9 @@ export default function CaseDetailsPage() {
           timelineEntries.push({
             case_id: caseData.id,
             event_type: "file_uploaded",
-            event_text: `File uploaded: ${insertedFile.file_name}`
+            event_text: `${buildActorLabel(currentProfile, currentUser)} uploaded file: ${insertedFile.file_name}`,
+            created_by_user_id: currentUser.id,
+            visible_to_dentist: section === "final_design" || currentRole === "dentist"
           })
         }
       }
@@ -838,26 +1286,61 @@ export default function CaseDetailsPage() {
           .select()
 
         if (timelineInsert?.length) {
-          setTimeline([...timelineInsert.reverse(), ...timeline])
+          setTimeline((prev) => [...timelineInsert.reverse(), ...prev])
+
+          if (currentProfile?.id) {
+            setActivityProfiles((prev) => ({
+              ...prev,
+              [currentProfile.id]: {
+                id: currentProfile.id,
+                full_name: currentProfile.full_name,
+                email: currentProfile.email,
+                role: currentProfile.role
+              }
+            }))
+          }
         }
       }
 
-      setFiles([...uploadedRecords.reverse(), ...files])
-      setSelectedFiles([])
-      setFileInputKey((prev) => prev + 1)
-      setFilesMessage("Files uploaded successfully.")
+      setFiles((prev) => [...uploadedRecords.reverse(), ...prev])
+
+      if (section === "final_design") {
+        setSelectedFinalDesignFiles([])
+        setFinalDesignInputKey((prev) => prev + 1)
+        setFinalDesignMessage("Final design uploaded successfully.")
+      } else {
+        setSelectedFiles([])
+        setFileInputKey((prev) => prev + 1)
+        setFilesMessage("Files uploaded successfully.")
+      }
     } catch (err) {
-      setFilesMessage(`Error: ${err.message}`)
+      if (section === "final_design") {
+        setFinalDesignMessage(`Error: ${err.message}`)
+      } else {
+        setFilesMessage(`Error: ${err.message}`)
+      }
     }
 
-    setUploadingFiles(false)
+    if (section === "final_design") {
+      setUploadingFinalDesign(false)
+    } else {
+      setUploadingFiles(false)
+    }
   }
 
   const deleteFile = async (file) => {
+    if (currentRole !== "admin") {
+      setFilesMessage("Only admin can delete files.")
+      return
+    }
+
     const confirmed = window.confirm(`Delete ${file.file_name}?`)
     if (!confirmed) return
 
+    const supabase = createClient()
+
     setFilesMessage("")
+    setFinalDesignMessage("")
 
     try {
       const { error: storageError } = await supabase
@@ -865,41 +1348,82 @@ export default function CaseDetailsPage() {
         .from("case-files")
         .remove([file.file_path])
 
-      if (storageError) {
-        throw storageError
-      }
+      if (storageError) throw storageError
 
       const { error: rowDeleteError } = await supabase
         .from("case_files")
         .delete()
         .eq("id", file.id)
 
-      if (rowDeleteError) {
-        throw rowDeleteError
-      }
+      if (rowDeleteError) throw rowDeleteError
 
-      const { data: timelineInsert } = await supabase
-        .from("case_timeline")
-        .insert([
-          {
-            case_id: caseData.id,
-            event_type: "file_deleted",
-            event_text: `File deleted: ${file.file_name}`
-          }
-        ])
-        .select()
-
-      setFiles(files.filter((item) => item.id !== file.id))
-      if (timelineInsert?.[0]) {
-        setTimeline([timelineInsert[0], ...timeline])
-      }
+      setFiles((prev) => prev.filter((item) => item.id !== file.id))
       setFilesMessage("File deleted successfully.")
     } catch (err) {
       setFilesMessage(`Error: ${err.message}`)
     }
   }
 
-  const imageFiles = files.filter(isImageFile)
+  const regularFiles = useMemo(
+    () => files.filter((file) => (file.file_section || "case_file") !== "final_design"),
+    [files]
+  )
+
+  const finalDesignFiles = useMemo(
+    () => files.filter((file) => (file.file_section || "case_file") === "final_design"),
+    [files]
+  )
+
+  const imageFiles = regularFiles.filter(isImageFile)
+
+  const activityItems = useMemo(() => {
+    const noteItems = caseNotes
+      .filter((note) => !looksLikeSystemGeneratedNote(note.note_text))
+      .map((note) => ({
+        id: `note-${note.id}`,
+        rawId: note.id,
+        activity_type: "note_added",
+        created_at: note.created_at,
+        text: note.note_text,
+        visible_to_dentist: note.visible_to_dentist === true,
+        created_by_user_id: note.created_by_user_id || null
+      }))
+
+    const timelineItems = timeline
+      .filter((event) => allowedActivityEventTypes.includes(event.event_type))
+      .map((event) => ({
+        id: `timeline-${event.id}`,
+        rawId: event.id,
+        activity_type:
+          event.event_type === "case_unassigned" ? "case_assigned" : event.event_type,
+        original_event_type: event.event_type,
+        created_at: event.created_at,
+        text: event.event_text,
+        visible_to_dentist: event.visible_to_dentist === true,
+        created_by_user_id: event.created_by_user_id || null
+      }))
+
+    let combined = [...noteItems, ...timelineItems].sort((a, b) => {
+      const aTime = parseAppDate(a.created_at)?.getTime() || 0
+      const bTime = parseAppDate(b.created_at)?.getTime() || 0
+      return bTime - aTime
+    })
+
+    combined = dedupeActivityItems(combined)
+
+    if (currentRole !== "dentist" || !currentUser?.id) {
+      return combined
+    }
+
+    return combined.filter((item) => {
+      return item.visible_to_dentist === true || item.created_by_user_id === currentUser.id
+    })
+  }, [caseNotes, timeline, currentRole, currentUser])
+
+  const canManageAssignments = currentRole === "admin" || currentRole === "designer"
+  const canUploadFinalDesign = currentRole === "admin" || currentRole === "designer"
+  const statusOptionsForCurrentRole =
+    currentRole === "dentist" ? ["Cancelled"] : allStatusOptions
 
   return (
     <div
@@ -975,6 +1499,11 @@ export default function CaseDetailsPage() {
               </div>
 
               <div style={{ marginBottom: "18px" }}>
+                <div style={labelStyle}>Dentist Name</div>
+                <div style={valueStyle}>{dentistDisplayName || "-"}</div>
+              </div>
+
+              <div style={{ marginBottom: "18px" }}>
                 <div style={labelStyle}>Teeth</div>
                 <div style={valueStyle}>{caseData.tooth_number || "-"}</div>
               </div>
@@ -1006,15 +1535,17 @@ export default function CaseDetailsPage() {
                 <div style={valueStyle}>{formatDate(caseData.surgical_date)}</div>
               </div>
 
-              <div style={{ marginBottom: "18px" }}>
+              <div style={{ marginBottom: currentRole !== "dentist" ? "18px" : 0 }}>
                 <div style={labelStyle}>Current Status</div>
                 <div style={valueStyle}>{caseData.status || "-"}</div>
               </div>
 
-              <div style={{ marginBottom: 0 }}>
-                <div style={labelStyle}>Assigned Designer</div>
-                <div style={valueStyle}>{caseData.assigned_designer_name || "Unassigned"}</div>
-              </div>
+              {currentRole !== "dentist" && (
+                <div style={{ marginBottom: 0 }}>
+                  <div style={labelStyle}>Assigned Designer</div>
+                  <div style={valueStyle}>{caseData.assigned_designer_name || "Unassigned"}</div>
+                </div>
+              )}
             </div>
 
             {imageFiles.length > 0 && (
@@ -1093,61 +1624,35 @@ export default function CaseDetailsPage() {
 
             <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
               <div style={{ marginBottom: "18px" }}>
-                <div style={labelStyle}>Assign Designer</div>
+                <div style={labelStyle}>Final Design</div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "12px",
-                    flexWrap: "wrap",
-                    alignItems: "center"
-                  }}
-                >
-                  <select
-                    style={{ ...inputStyle, maxWidth: "320px" }}
-                    value={selectedDesignerId}
-                    onChange={(e) => setSelectedDesignerId(e.target.value)}
-                  >
-                    <option value="">Select designer</option>
-                    {designers.map((designer) => (
-                      <option key={designer.id} value={designer.id}>
-                        {designer.full_name}
-                      </option>
-                    ))}
-                  </select>
+                {canUploadFinalDesign && (
+                  <>
+                    <input
+                      key={finalDesignInputKey}
+                      type="file"
+                      multiple
+                      accept=".stl,.obj,.ply,.dcm,.dicom,image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.svg,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
+                      style={inputStyle}
+                      onChange={(e) => setSelectedFinalDesignFiles(Array.from(e.target.files || []))}
+                    />
 
-                  <button
-                    type="button"
-                    onClick={updateAssignment}
-                    disabled={savingAssignment}
-                    style={{
-                      ...buttonStyle,
-                      opacity: savingAssignment ? 0.7 : 1
-                    }}
-                  >
-                    {savingAssignment
-                      ? "Saving..."
-                      : caseData.assigned_designer_name
-                      ? "Reassign Designer"
-                      : "Assign Designer"}
-                  </button>
-
-                  {caseData.assigned_designer_name && (
                     <button
                       type="button"
-                      onClick={unassignDesigner}
-                      disabled={savingAssignment}
+                      onClick={() => uploadFilesBySection("final_design")}
+                      disabled={uploadingFinalDesign}
                       style={{
-                        ...secondaryButtonStyle,
-                        opacity: savingAssignment ? 0.7 : 1
+                        ...buttonStyle,
+                        marginTop: "14px",
+                        opacity: uploadingFinalDesign ? 0.7 : 1
                       }}
                     >
-                      Unassign
+                      {uploadingFinalDesign ? "Uploading..." : "Upload Final Design"}
                     </button>
-                  )}
-                </div>
+                  </>
+                )}
 
-                {assignmentMessage && (
+                {finalDesignMessage && (
                   <p
                     style={{
                       marginTop: "14px",
@@ -1155,11 +1660,163 @@ export default function CaseDetailsPage() {
                       fontSize: "14px"
                     }}
                   >
-                    {assignmentMessage}
+                    {finalDesignMessage}
                   </p>
                 )}
+
+                <div style={{ marginTop: "20px", display: "grid", gap: "14px" }}>
+                  {finalDesignFiles.length === 0 ? (
+                    <div style={{ color: "#685B60", fontSize: "14px" }}>
+                      No final design files uploaded yet.
+                    </div>
+                  ) : (
+                    finalDesignFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        style={{
+                          border: "1px solid #E7D9E3",
+                          borderRadius: "14px",
+                          padding: "14px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "12px",
+                          alignItems: "center",
+                          flexWrap: "wrap"
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              color: "#685B60",
+                              fontSize: "14px",
+                              fontWeight: "600",
+                              marginBottom: "6px"
+                            }}
+                          >
+                            {file.file_name}
+                          </div>
+
+                          <div
+                            style={{
+                              color: "#9B8C93",
+                              fontSize: "12px"
+                            }}
+                          >
+                            {file.file_type} • {formatDateTime(file.created_at)}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "10px",
+                            alignItems: "center",
+                            flexWrap: "wrap"
+                          }}
+                        >
+                          {file.signedUrl && (
+                            <a
+                              href={file.signedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                color: "#685B60",
+                                fontWeight: "600",
+                                textDecoration: "none"
+                              }}
+                            >
+                              Open File
+                            </a>
+                          )}
+
+                          {currentRole === "admin" && (
+                            <button
+                              type="button"
+                              onClick={() => deleteFile(file)}
+                              style={deleteButtonStyle}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
+
+            {canManageAssignments && (
+              <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
+                <div style={{ marginBottom: "18px" }}>
+                  <div style={labelStyle}>Assign Designer</div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      flexWrap: "wrap",
+                      alignItems: "center"
+                    }}
+                  >
+                    <select
+                      style={{ ...inputStyle, maxWidth: "320px" }}
+                      value={selectedDesignerId}
+                      onChange={(e) => setSelectedDesignerId(e.target.value)}
+                    >
+                      <option value="">Select designer</option>
+                      {designers.map((designer) => (
+                        <option key={designer.id} value={designer.id}>
+                          {designer.full_name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={updateAssignment}
+                      disabled={savingAssignment}
+                      style={{
+                        ...buttonStyle,
+                        opacity: savingAssignment ? 0.7 : 1
+                      }}
+                    >
+                      {savingAssignment
+                        ? "Saving..."
+                        : caseData.assigned_designer_name
+                        ? "Reassign Designer"
+                        : "Assign Designer"}
+                    </button>
+
+                    {caseData.assigned_designer_name && (
+                      <button
+                        type="button"
+                        onClick={unassignDesigner}
+                        disabled={savingAssignment}
+                        style={{
+                          ...secondaryButtonStyle,
+                          opacity: savingAssignment ? 0.7 : 1
+                        }}
+                      >
+                        Unassign
+                      </button>
+                    )}
+                  </div>
+
+                  {assignmentMessage && (
+                    <p
+                      style={{
+                        marginTop: "14px",
+                        color: "#685B60",
+                        fontSize: "14px"
+                      }}
+                    >
+                      {assignmentMessage}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
               <div style={{ marginBottom: "18px" }}>
@@ -1247,7 +1904,7 @@ export default function CaseDetailsPage() {
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
                   >
-                    {statusOptions.map((item) => (
+                    {statusOptionsForCurrentRole.map((item) => (
                       <option key={item} value={item}>
                         {item}
                       </option>
@@ -1296,7 +1953,7 @@ export default function CaseDetailsPage() {
 
               <button
                 type="button"
-                onClick={uploadFiles}
+                onClick={() => uploadFilesBySection("case_file")}
                 disabled={uploadingFiles}
                 style={{
                   ...buttonStyle,
@@ -1330,13 +1987,13 @@ export default function CaseDetailsPage() {
                   Files
                 </div>
 
-                {files.length === 0 ? (
+                {regularFiles.length === 0 ? (
                   <div style={{ color: "#685B60", fontSize: "14px" }}>
                     No files uploaded yet.
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: "14px" }}>
-                    {files.map((file) => (
+                    {regularFiles.map((file) => (
                       <div
                         key={file.id}
                         style={{
@@ -1405,13 +2062,15 @@ export default function CaseDetailsPage() {
                             </a>
                           )}
 
-                          <button
-                            type="button"
-                            onClick={() => deleteFile(file)}
-                            style={deleteButtonStyle}
-                          >
-                            Delete
-                          </button>
+                          {currentRole === "admin" && (
+                            <button
+                              type="button"
+                              onClick={() => deleteFile(file)}
+                              style={deleteButtonStyle}
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1428,6 +2087,26 @@ export default function CaseDetailsPage() {
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                 />
+
+                {currentRole !== "dentist" && (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      marginTop: "14px",
+                      color: "#685B60",
+                      fontSize: "14px"
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={noteVisibleToDentist}
+                      onChange={(e) => setNoteVisibleToDentist(e.target.checked)}
+                    />
+                    Visible to dentist
+                  </label>
+                )}
               </div>
 
               <button
@@ -1463,113 +2142,128 @@ export default function CaseDetailsPage() {
                     marginBottom: "14px"
                   }}
                 >
-                  Notes History
+                  Activity
                 </div>
 
-                {caseNotes.length === 0 ? (
+                {activityItems.length === 0 ? (
                   <div style={{ color: "#685B60", fontSize: "14px" }}>
-                    No notes added yet.
+                    No activity yet.
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: "14px" }}>
-                    {caseNotes.map((note) => (
-                      <div
-                        key={note.id}
-                        style={{
-                          border: "1px solid #E7D9E3",
-                          borderRadius: "14px",
-                          padding: "14px"
-                        }}
-                      >
-                        <div
-                          style={{
-                            color: "#9B8C93",
-                            fontSize: "12px",
-                            marginBottom: "8px"
-                          }}
-                        >
-                          {formatDateTime(note.created_at)}
-                        </div>
+                    {activityItems.map((item) => {
+                      const visibleToDentist = item.visible_to_dentist === true
 
+                      const displayText = buildActivityText({
+                        item,
+                        currentRole,
+                        currentUser,
+                        currentProfile,
+                        designers,
+                        activityProfiles,
+                        caseData
+                      })
+
+                      return (
                         <div
+                          key={item.id}
                           style={{
-                            color: "#685B60",
-                            fontSize: "14px",
-                            lineHeight: "1.6"
+                            border: visibleToDentist ? "1px solid #B7E3C1" : "1px solid #E7D9E3",
+                            borderRadius: "14px",
+                            padding: "14px",
+                            background: visibleToDentist ? "#EEF9F1" : "#FFFFFF"
                           }}
                         >
-                          {note.note_text}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: "12px",
+                              flexWrap: "wrap",
+                              marginBottom: "8px"
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "center",
+                                flexWrap: "wrap"
+                              }}
+                            >
+                              <span style={getActivityBadgeStyle(item.activity_type)}>
+                                {getActivityBadgeLabel(item.activity_type)}
+                              </span>
+                            </div>
+
+                            <span
+                              style={{
+                                color: "#9B8C93",
+                                fontSize: "12px"
+                              }}
+                            >
+                              {formatDateTime(item.created_at)}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              color: "#685B60",
+                              fontSize: "14px",
+                              lineHeight: "1.6"
+                            }}
+                          >
+                            {displayText}
+                          </div>
+
+                          {(currentRole === "admin" || currentRole === "designer") && (
+                            <div
+                              style={{
+                                marginTop: "12px",
+                                display: "flex",
+                                gap: "10px",
+                                flexWrap: "wrap"
+                              }}
+                            >
+                              {!visibleToDentist ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    item.activity_type === "note_added"
+                                      ? makeNoteVisibleToDentist(item.rawId)
+                                      : makeTimelineVisibleToDentist(item.rawId)
+                                  }
+                                  style={{
+                                    ...secondaryButtonStyle,
+                                    padding: "8px 12px"
+                                  }}
+                                >
+                                  Make Visible to Dentist
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    item.activity_type === "note_added"
+                                      ? hideNoteFromDentist(item.rawId)
+                                      : hideTimelineFromDentist(item.rawId)
+                                  }
+                                  style={{
+                                    ...secondaryButtonStyle,
+                                    padding: "8px 12px"
+                                  }}
+                                >
+                                  Hide from Dentist
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
-            </div>
-
-            <div style={{ ...cardStyle, gridColumn: "1 / -1" }}>
-              <div
-                style={{
-                  color: "#685B60",
-                  fontSize: "16px",
-                  fontWeight: "700",
-                  marginBottom: "14px"
-                }}
-              >
-                Timeline
-              </div>
-
-              {timeline.length === 0 ? (
-                <div style={{ color: "#685B60", fontSize: "14px" }}>
-                  No timeline events yet.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: "14px" }}>
-                  {timeline.map((event) => (
-                    <div
-                      key={event.id}
-                      style={{
-                        border: "1px solid #E7D9E3",
-                        borderRadius: "14px",
-                        padding: "14px"
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: "12px",
-                          flexWrap: "wrap",
-                          marginBottom: "8px"
-                        }}
-                      >
-                        <span style={getTimelineBadgeStyle(event.event_type)}>
-                          {getTimelineLabel(event.event_type)}
-                        </span>
-
-                        <span
-                          style={{
-                            color: "#9B8C93",
-                            fontSize: "12px"
-                          }}
-                        >
-                          {formatDateTime(event.created_at)}
-                        </span>
-                      </div>
-
-                      <div
-                        style={{
-                          color: "#685B60",
-                          fontSize: "14px",
-                          lineHeight: "1.6"
-                        }}
-                      >
-                        {event.event_text}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Sidebar from "../../components/Sidebar"
-import { supabase } from "../../lib/supabase"
+import { createClient } from "../../utils/supabase/client"
 
 const labelStyle = {
   display: "block",
@@ -192,7 +192,7 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-async function getNextCaseNumber() {
+async function getNextCaseNumber(supabase) {
   const { data, error } = await supabase.rpc("get_next_case_number")
 
   if (error) {
@@ -289,7 +289,20 @@ export default function NewCasePage() {
     setLoading(true)
 
     try {
-      const caseNumber = await getNextCaseNumber()
+      const supabase = createClient()
+
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        setMessage("Unable to identify the logged-in user.")
+        setLoading(false)
+        return
+      }
+
+      const caseNumber = await getNextCaseNumber(supabase)
       const toothNumber = selectedTeeth.join(",")
 
       const { data, error } = await supabase
@@ -304,7 +317,9 @@ export default function NewCasePage() {
             implant_type: implantType.trim() || null,
             surgical_kit: surgicalKit.trim() || null,
             surgical_date: surgicalDate || null,
-            status: "New Case"
+            status: "New Case",
+            created_by_user_id: user.id,
+            dentist_user_id: user.id
           }
         ])
         .select()
@@ -327,7 +342,9 @@ export default function NewCasePage() {
         {
           case_id: insertedCase.id,
           event_type: "case_created",
-          event_text: `Case created (${insertedCase.case_number})`
+          event_text: `Case created (${insertedCase.case_number})`,
+          created_by_user_id: user.id,
+          visible_to_dentist: true
         }
       ]
 
@@ -337,7 +354,9 @@ export default function NewCasePage() {
           .insert([
             {
               case_id: insertedCase.id,
-              note_text: notes.trim()
+              note_text: notes.trim(),
+              created_by_user_id: user.id,
+              visible_to_dentist: true
             }
           ])
 
@@ -350,7 +369,9 @@ export default function NewCasePage() {
         timelineEntries.push({
           case_id: insertedCase.id,
           event_type: "note_added",
-          event_text: "Initial note added"
+          event_text: "Initial note added",
+          created_by_user_id: user.id,
+          visible_to_dentist: true
         })
       }
 
@@ -380,7 +401,8 @@ export default function NewCasePage() {
               case_id: insertedCase.id,
               file_name: file.name,
               file_path: filePath,
-              file_type: fileType
+              file_type: fileType,
+              file_section: "case_file"
             }
           ])
 
@@ -393,7 +415,9 @@ export default function NewCasePage() {
         timelineEntries.push({
           case_id: insertedCase.id,
           event_type: "file_uploaded",
-          event_text: `File uploaded: ${file.name}`
+          event_text: `File uploaded: ${file.name}`,
+          created_by_user_id: user.id,
+          visible_to_dentist: true
         })
       }
 

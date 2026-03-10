@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import Sidebar from "../../components/Sidebar"
-import { supabase } from "../../lib/supabase"
+import { createClient } from "../../utils/supabase/client"
 
 const inputStyle = {
   width: "100%",
@@ -135,10 +135,12 @@ function getStatusStyle(status) {
 }
 
 export default function DesignerDashboardPage() {
+  const [currentRole, setCurrentRole] = useState("")
+  const [selectedDesigner, setSelectedDesigner] = useState(null)
   const [designers, setDesigners] = useState([])
   const [selectedDesignerId, setSelectedDesignerId] = useState("")
   const [designerCases, setDesignerCases] = useState([])
-  const [loadingDesigners, setLoadingDesigners] = useState(true)
+  const [loadingPage, setLoadingPage] = useState(true)
   const [loadingCases, setLoadingCases] = useState(false)
   const [message, setMessage] = useState("")
   const [search, setSearch] = useState("")
@@ -146,38 +148,92 @@ export default function DesignerDashboardPage() {
   const [serviceFilter, setServiceFilter] = useState("")
 
   useEffect(() => {
-    fetchDesigners()
+    loadPage()
   }, [])
 
-  useEffect(() => {
-    if (selectedDesignerId) {
-      fetchDesignerCases(selectedDesignerId)
-    } else {
-      setDesignerCases([])
-    }
-  }, [selectedDesignerId])
+  const loadPage = async () => {
+    const supabase = createClient()
 
-  const fetchDesigners = async () => {
-    setLoadingDesigners(true)
+    setLoadingPage(true)
     setMessage("")
 
-    const { data, error } = await supabase
-      .from("designers")
-      .select("*")
-      .eq("is_active", true)
-      .order("full_name", { ascending: true })
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser()
 
-    if (error) {
-      setMessage(error.message)
-      setLoadingDesigners(false)
+    if (userError || !user) {
+      setMessage("Unable to load the logged-in user.")
+      setLoadingPage(false)
       return
     }
 
-    setDesigners(data || [])
-    setLoadingDesigners(false)
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (profileError) {
+      setMessage(profileError.message)
+      setLoadingPage(false)
+      return
+    }
+
+    const role = profile?.role || ""
+    setCurrentRole(role)
+
+    if (role === "designer") {
+      const { data: designerRow, error: designerError } = await supabase
+        .from("designers")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      if (designerError) {
+        setMessage(designerError.message)
+        setLoadingPage(false)
+        return
+      }
+
+      if (!designerRow) {
+        setMessage("No designer profile is linked to this account.")
+        setLoadingPage(false)
+        return
+      }
+
+      setSelectedDesigner(designerRow)
+      setSelectedDesignerId(designerRow.id)
+      await fetchDesignerCases(designerRow.id)
+      setLoadingPage(false)
+      return
+    }
+
+    if (role === "admin") {
+      const { data: designersData, error: designersError } = await supabase
+        .from("designers")
+        .select("*")
+        .eq("is_active", true)
+        .order("full_name", { ascending: true })
+
+      if (designersError) {
+        setMessage(designersError.message)
+        setLoadingPage(false)
+        return
+      }
+
+      setDesigners(designersData || [])
+      setLoadingPage(false)
+      return
+    }
+
+    setMessage("You do not have permission to view this page.")
+    setLoadingPage(false)
   }
 
   const fetchDesignerCases = async (designerId) => {
+    const supabase = createClient()
+
     setLoadingCases(true)
     setMessage("")
 
@@ -198,9 +254,21 @@ export default function DesignerDashboardPage() {
     setLoadingCases(false)
   }
 
-  const selectedDesigner = useMemo(() => {
-    return designers.find((designer) => designer.id === selectedDesignerId) || null
-  }, [designers, selectedDesignerId])
+  const handleAdminDesignerChange = async (designerId) => {
+    setSelectedDesignerId(designerId)
+    setSelectedDesigner(null)
+    setDesignerCases([])
+    setMessage("")
+
+    if (!designerId) {
+      return
+    }
+
+    const designerRow = designers.find((item) => item.id === designerId) || null
+    setSelectedDesigner(designerRow)
+
+    await fetchDesignerCases(designerId)
+  }
 
   const serviceOptions = useMemo(() => {
     const uniqueServices = [
@@ -261,6 +329,12 @@ export default function DesignerDashboardPage() {
     (item) => item.status === "Delivered"
   ).length
 
+  const pageTitle = currentRole === "designer" ? "My Cases" : "Designer Dashboard"
+  const pageSubtitle =
+    currentRole === "designer"
+      ? "View only cases assigned to you."
+      : "View cases assigned to one designer."
+
   return (
     <div
       style={{
@@ -286,7 +360,7 @@ export default function DesignerDashboardPage() {
             fontSize: "32px"
           }}
         >
-          Designer Dashboard
+          {pageTitle}
         </h1>
 
         <p
@@ -297,64 +371,91 @@ export default function DesignerDashboardPage() {
             marginBottom: "24px"
           }}
         >
-          View cases assigned to one designer.
+          {pageSubtitle}
         </p>
 
-        <div
-          style={{
-            background: "#FFFFFF",
-            borderRadius: "16px",
-            padding: "24px",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
-            marginBottom: "24px"
-          }}
-        >
-          <label
+        {loadingPage && (
+          <div
             style={{
-              display: "block",
-              color: "#685B60",
-              fontSize: "14px",
-              fontWeight: "600",
-              marginBottom: "10px"
+              background: "#FFFFFF",
+              borderRadius: "16px",
+              padding: "24px",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
+              marginBottom: "24px"
             }}
           >
-            Select Designer
-          </label>
+            <p style={{ color: "#685B60", margin: 0 }}>
+              Loading page...
+            </p>
+          </div>
+        )}
 
-          <select
-            style={{ ...inputStyle, maxWidth: "320px" }}
-            value={selectedDesignerId}
-            onChange={(e) => setSelectedDesignerId(e.target.value)}
-            disabled={loadingDesigners}
+        {!loadingPage && currentRole === "admin" && (
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: "16px",
+              padding: "24px",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
+              marginBottom: "24px"
+            }}
           >
-            <option value="">Choose a designer</option>
-            {designers.map((designer) => (
-              <option key={designer.id} value={designer.id}>
-                {designer.full_name}
-              </option>
-            ))}
-          </select>
+            <label
+              style={{
+                display: "block",
+                color: "#685B60",
+                fontSize: "14px",
+                fontWeight: "600",
+                marginBottom: "10px"
+              }}
+            >
+              Select Designer
+            </label>
 
-          {loadingDesigners && (
-            <p style={{ color: "#685B60", marginTop: "16px" }}>
-              Loading designers...
+            <select
+              style={{ ...inputStyle, maxWidth: "320px" }}
+              value={selectedDesignerId}
+              onChange={(e) => handleAdminDesignerChange(e.target.value)}
+            >
+              <option value="">Choose a designer</option>
+              {designers.map((designer) => (
+                <option key={designer.id} value={designer.id}>
+                  {designer.full_name}
+                </option>
+              ))}
+            </select>
+
+            {message && (
+              <p style={{ color: "#685B60", marginTop: "16px" }}>
+                {message}
+              </p>
+            )}
+
+            {!message && selectedDesigner && (
+              <p style={{ color: "#685B60", marginTop: "16px" }}>
+                Showing assigned cases for <strong>{selectedDesigner.full_name}</strong>.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!loadingPage && currentRole === "designer" && selectedDesigner && (
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: "16px",
+              padding: "24px",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
+              marginBottom: "24px"
+            }}
+          >
+            <p style={{ color: "#685B60", margin: 0 }}>
+              Logged in as designer: <strong>{selectedDesigner.full_name}</strong>
             </p>
-          )}
+          </div>
+        )}
 
-          {message && !loadingDesigners && (
-            <p style={{ color: "#685B60", marginTop: "16px" }}>
-              {message}
-            </p>
-          )}
-
-          {!loadingDesigners && !message && selectedDesigner && (
-            <p style={{ color: "#685B60", marginTop: "16px" }}>
-              Showing assigned cases for <strong>{selectedDesigner.full_name}</strong>.
-            </p>
-          )}
-        </div>
-
-        {selectedDesignerId && (
+        {!loadingPage && selectedDesignerId && (
           <div
             style={{
               display: "flex",
@@ -386,16 +487,16 @@ export default function DesignerDashboardPage() {
               marginBottom: "20px"
             }}
           >
-            Assigned Cases
+            {currentRole === "designer" ? "My Assigned Cases" : "Assigned Cases"}
           </h2>
 
-          {!selectedDesignerId && (
+          {!loadingPage && !selectedDesignerId && currentRole === "admin" && (
             <p style={{ color: "#685B60", margin: 0 }}>
               Please choose a designer first.
             </p>
           )}
 
-          {selectedDesignerId && (
+          {!loadingPage && selectedDesignerId && (
             <div
               style={{
                 display: "grid",
@@ -440,7 +541,7 @@ export default function DesignerDashboardPage() {
             </div>
           )}
 
-          {selectedDesignerId && (search || statusFilter || serviceFilter) && (
+          {!loadingPage && selectedDesignerId && (search || statusFilter || serviceFilter) && (
             <div
               style={{
                 marginBottom: "18px",
@@ -477,13 +578,19 @@ export default function DesignerDashboardPage() {
             </div>
           )}
 
-          {selectedDesignerId && loadingCases && (
+          {!loadingPage && selectedDesignerId && loadingCases && (
             <p style={{ color: "#685B60", margin: 0 }}>
               Loading assigned cases...
             </p>
           )}
 
-          {selectedDesignerId && !loadingCases && (
+          {!loadingPage && message && currentRole !== "admin" && !selectedDesignerId && (
+            <p style={{ color: "#685B60", marginBottom: "16px" }}>
+              {message}
+            </p>
+          )}
+
+          {!loadingPage && selectedDesignerId && !loadingCases && (
             <div style={{ overflowX: "auto" }}>
               <table
                 style={{
