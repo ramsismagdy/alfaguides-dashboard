@@ -10,6 +10,9 @@ import { createClient } from "../utils/supabase/client"
 
 const sidebarStyle = {
   width: "240px",
+  minWidth: "240px",
+  maxWidth: "240px",
+  flexShrink: 0,
   background: "#171717",
   color: "#F0F0F0",
   minHeight: "100vh",
