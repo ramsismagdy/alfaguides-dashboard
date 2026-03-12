@@ -318,7 +318,7 @@ export default function SignUpPage() {
       return
     }
 
-    setMessage("Dentist account created successfully. Please check email confirmation if it is enabled, then sign in.")
+    setMessage("Account created successfully. Please check email confirmation if it is enabled, then sign in.")
     setLoading(false)
 
     setTimeout(() => {
@@ -341,7 +341,7 @@ export default function SignUpPage() {
         </div>
 
         <h1 style={{ color: "#F0F0F0", marginTop: 0, marginBottom: "10px", textAlign: "center" }}>
-          Dentist Sign Up
+          Sign Up
         </h1>
 
         <div
@@ -538,7 +538,7 @@ export default function SignUpPage() {
             opacity: loading ? 0.7 : 1
           }}
         >
-          {loading ? "Creating Account..." : "Create Dentist Account"}
+          {loading ? "Creating Account..." : "Create Account"}
         </button>
 
         <div style={{ marginTop: "18px", textAlign: "center", color: "#CFCFCF", fontSize: "14px" }}>

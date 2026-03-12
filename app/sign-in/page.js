@@ -94,7 +94,7 @@ export default function SignInPage() {
         </h1>
 
         <p style={{ color: "#CFCFCF", marginTop: 0, marginBottom: "24px", textAlign: "center" }}>
-          Access your Alfaguides dashboard
+          Welcome to Alfaguides
         </p>
 
         <div style={{ marginBottom: "14px" }}>
@@ -157,7 +157,7 @@ export default function SignInPage() {
         </button>
 
         <div style={{ marginTop: "18px", textAlign: "center", color: "#CFCFCF", fontSize: "14px" }}>
-          Need a dentist account?{" "}
+          Don't have an account?{" "}
           <Link href="/sign-up" style={{ color: "#F0F0F0", fontWeight: "600", textDecoration: "none" }}>
             Sign Up
           </Link>
