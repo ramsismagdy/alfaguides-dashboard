@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Sidebar from "../../../components/Sidebar"
@@ -1528,7 +1529,18 @@ export default function CaseDetailsPage() {
 
               <div style={{ marginBottom: "18px" }}>
                 <div style={labelStyle}>Dentist Name</div>
-                <div style={valueStyle}>{dentistDisplayName || "-"}</div>
+                <div style={valueStyle}>
+                  {caseData?.dentist_user_id ? (
+                    <Link
+                      href={`/dentists/${caseData.dentist_user_id}`}
+                      style={{ color: "#685B60", textDecoration: "none", fontWeight: "600" }}
+                    >
+                      {dentistDisplayName || "-"}
+                    </Link>
+                  ) : (
+                    dentistDisplayName || "-"
+                  )}
+                </div>
               </div>
 
               <div style={{ marginBottom: "18px" }}>

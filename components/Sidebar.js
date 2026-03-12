@@ -83,7 +83,9 @@ export default function Sidebar() {
     { href: "/cases", label: "Cases", roles: ["admin", "designer"] },
     { href: "/designer-dashboard", label: "My Cases", roles: ["designer"] },
     { href: "/designer-dashboard", label: "Designer", roles: ["admin"] },
-    { href: "/my-cases", label: "My Cases", roles: ["dentist"] }
+    { href: "/my-cases", label: "My Cases", roles: ["dentist"] },
+    { href: "/my-profile", label: "My Profile", roles: ["dentist"] },
+    { href: "/dentists", label: "Dentists", roles: ["admin", "designer"] }
   ]
 
   const visibleLinks = allLinks.filter((link) => {

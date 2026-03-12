@@ -648,7 +648,13 @@ export default function CasesPage() {
                         </td>
 
                         <td style={tableCellStyle}>
-                          {item.dentist_name || item.dentist_email || "-"}
+                          {item.dentist_user_id ? (
+                            <Link href={`/dentists/${item.dentist_user_id}`} style={linkStyle}>
+                              {item.dentist_name || item.dentist_email || "-"}
+                            </Link>
+                          ) : (
+                            item.dentist_name || item.dentist_email || "-"
+                          )}
                         </td>
 
                         <td style={tableCellStyle}>{item.service_type || "-"}</td>
@@ -662,13 +668,13 @@ export default function CasesPage() {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: "8px",
-                                minWidth: "170px"
+                                minWidth: "200px"
                               }}
                             >
                               <select
                                 style={{
                                   ...inputStyle,
-                                  minWidth: "135px",
+                                  minWidth: "170px",
                                   padding: "10px 12px",
                                   opacity: savingAssignmentId === item.id ? 0.7 : 1,
                                   background: item.assigned_designer_name ? "#E8F1FF" : "#FFFFFF",

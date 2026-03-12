@@ -217,10 +217,42 @@ export default function NewCasePage() {
   const [fileInputKey, setFileInputKey] = useState(0)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState("")
+  const [dentistProfile, setDentistProfile] = useState(null)
+  const [specialNote, setSpecialNote] = useState("")
 
   useEffect(() => {
     setArch(detectArch(selectedTeeth))
   }, [selectedTeeth])
+
+  useEffect(() => {
+    const loadDentistDefaults = async () => {
+      const supabase = createClient()
+
+      const {
+        data: { user }
+      } = await supabase.auth.getUser()
+
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (!profile) return
+
+      setDentistProfile(profile)
+
+      if (profile.role === "dentist") {
+        setImplantType(profile.preferred_implant_types || "")
+        setSurgicalKit(profile.surgical_guided_kit || "")
+        setSpecialNote(profile.special_note || "")
+      }
+    }
+
+    loadDentistDefaults()
+  }, [])
 
   const showNumberOfImplants =
     serviceType === "Implant Planning" ||
@@ -236,8 +268,8 @@ export default function NewCasePage() {
     setPatientLastName("")
     setSelectedTeeth([])
     setServiceType("")
-    setImplantType("")
-    setSurgicalKit("")
+    setImplantType(dentistProfile?.preferred_implant_types || "")
+    setSurgicalKit(dentistProfile?.surgical_guided_kit || "")
     setSurgicalDate("")
     setNotes("")
     setArch("")
@@ -319,7 +351,9 @@ export default function NewCasePage() {
             surgical_date: surgicalDate || null,
             status: "New Case",
             created_by_user_id: user.id,
-            dentist_user_id: user.id
+            dentist_user_id: dentistProfile?.id || user.id,
+            dentist_name: dentistProfile?.full_name || null,
+            dentist_email: dentistProfile?.email || null
           }
         ])
         .select()
@@ -347,6 +381,33 @@ export default function NewCasePage() {
           visible_to_dentist: true
         }
       ]
+
+      if (specialNote.trim()) {
+        const { error: specialNoteError } = await supabase
+          .from("case_notes")
+          .insert([
+            {
+              case_id: insertedCase.id,
+              note_text: specialNote.trim(),
+              created_by_user_id: dentistProfile?.id || null,
+              visible_to_dentist: true
+            }
+          ])
+
+        if (specialNoteError) {
+          setMessage(`Case created, but dentist special note could not be saved: ${specialNoteError.message}`)
+          setLoading(false)
+          return
+        }
+
+        timelineEntries.push({
+          case_id: insertedCase.id,
+          event_type: "note_added",
+          event_text: "Dentist special note added",
+          created_by_user_id: dentistProfile?.id || null,
+          visible_to_dentist: true
+        })
+      }
 
       if (notes.trim()) {
         const { error: noteError } = await supabase
@@ -428,6 +489,10 @@ export default function NewCasePage() {
       }
 
       const successParts = [`Case submitted successfully. Case ID: ${caseNumber}`]
+
+      if (specialNote.trim()) {
+        successParts.push("Dentist special note added.")
+      }
 
       if (notes.trim()) {
         successParts.push("Initial note saved.")

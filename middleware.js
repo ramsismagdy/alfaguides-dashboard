@@ -1,131 +1,177 @@
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
+import { createServerClient } from "@supabase/ssr"
+import { NextResponse } from "next/server"
+
+function startsWithPath(pathname, basePath) {
+  return pathname === basePath || pathname.startsWith(`${basePath}/`)
+}
+
+function isCaseDetailsPath(pathname) {
+  return /^\/cases\/[^/]+$/.test(pathname)
+}
+
+function isDentistDetailsPath(pathname) {
+  return /^\/dentists\/[^/]+$/.test(pathname)
+}
 
 export async function middleware(request) {
-  let response = NextResponse.next({
-    request,
-  })
+  let response = NextResponse.next()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
+        get(name) {
+          return request.cookies.get(name)?.value
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value)
-            response.cookies.set(name, value, options)
-          })
+        set(name, value, options) {
+          response.cookies.set({ name, value, ...options })
         },
-      },
+        remove(name, options) {
+          response.cookies.set({ name, value: "", ...options })
+        }
+      }
     }
   )
 
   const {
-    data: { user },
+    data: { user }
   } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
 
-  const isAuthPage = pathname === '/login'
-  const isPublicAsset =
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon.ico') ||
-    pathname.match(/\.(svg|png|jpg|jpeg|gif|webp)$/)
+  const publicRoutes = [
+    "/sign-in",
+    "/sign-up",
+    "/forgot-password",
+    "/update-password"
+  ]
 
-  if (!user && !isAuthPage && !isPublicAsset) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+  const isPublicRoute = publicRoutes.includes(pathname)
+
+  if (!user && !isPublicRoute) {
+    return NextResponse.redirect(new URL("/sign-in", request.url))
   }
 
-  if (user && isAuthPage) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, is_active')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const role = profile?.role || ''
-    const isActive = profile?.is_active !== false
-
-    if (!profile || !isActive) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
+  if (user && isPublicRoute) {
+    if (pathname === "/update-password") {
+      return response
     }
 
-    const fallbackPath =
-      role === 'admin'
-        ? '/'
-        : role === 'designer'
-        ? '/designer-dashboard'
-        : role === 'dentist'
-        ? '/my-cases'
-        : '/login'
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle()
 
-    const url = request.nextUrl.clone()
-    url.pathname = fallbackPath
-    return NextResponse.redirect(url)
+    const role = profile?.role || ""
+
+    if (role === "admin") {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+
+    if (role === "designer") {
+      return NextResponse.redirect(new URL("/cases", request.url))
+    }
+
+    if (role === "dentist") {
+      return NextResponse.redirect(new URL("/my-cases", request.url))
+    }
+
+    return NextResponse.redirect(new URL("/", request.url))
   }
 
-  if (user && !isAuthPage && !isPublicAsset) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, is_active')
-      .eq('id', user.id)
-      .maybeSingle()
+  if (!user) {
+    return response
+  }
 
-    const role = profile?.role || ''
-    const isActive = profile?.is_active !== false
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle()
 
-    if (!profile || !isActive) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
+  const role = profile?.role || ""
+
+  const isAdmin = role === "admin"
+  const isDesigner = role === "designer"
+  const isDentist = role === "dentist"
+
+  if (pathname === "/") {
+    if (isAdmin) return response
+
+    if (isDesigner) {
+      return NextResponse.redirect(new URL("/cases", request.url))
     }
 
-    const isDentistCaseDetails =
-      role === 'dentist' &&
-      pathname.startsWith('/cases/') &&
-      pathname !== '/cases'
-
-    const roleAccess = {
-      admin: ['/', '/new-case', '/cases', '/designer-dashboard'],
-      designer: ['/cases', '/designer-dashboard'],
-      dentist: ['/new-case', '/my-cases'],
-      external_lab: []
+    if (isDentist) {
+      return NextResponse.redirect(new URL("/my-cases", request.url))
     }
 
-    const allowedPaths = roleAccess[role] || []
+    return NextResponse.redirect(new URL("/sign-in", request.url))
+  }
 
-    const isAllowed =
-      isDentistCaseDetails ||
-      allowedPaths.some((allowedPath) => {
-        if (allowedPath === '/') {
-          return pathname === '/'
-        }
-
-        return pathname === allowedPath || pathname.startsWith(`${allowedPath}/`)
-      })
-
-    if (!isAllowed) {
-      const fallbackPath =
-        role === 'admin'
-          ? '/'
-          : role === 'designer'
-          ? '/designer-dashboard'
-          : role === 'dentist'
-          ? '/my-cases'
-          : '/login'
-
-      const url = request.nextUrl.clone()
-      url.pathname = fallbackPath
-      return NextResponse.redirect(url)
+  if (startsWithPath(pathname, "/my-profile")) {
+    if (!isDentist) {
+      return NextResponse.redirect(new URL("/", request.url))
     }
+    return response
+  }
+
+  if (startsWithPath(pathname, "/my-cases")) {
+    if (!isDentist) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
+  }
+
+  if (startsWithPath(pathname, "/new-case")) {
+    if (!(isAdmin || isDentist)) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
+  }
+
+  if (pathname === "/cases") {
+    if (!(isAdmin || isDesigner)) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
+  }
+
+  if (isCaseDetailsPath(pathname)) {
+    if (!(isAdmin || isDesigner || isDentist)) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
+  }
+
+  if (pathname === "/dentists") {
+    if (!(isAdmin || isDesigner)) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
+  }
+
+  if (isDentistDetailsPath(pathname)) {
+    const dentistIdInPath = pathname.split("/")[2]
+
+    if (isAdmin || isDesigner) {
+      return response
+    }
+
+    if (isDentist && dentistIdInPath === user.id) {
+      return response
+    }
+
+    return NextResponse.redirect(new URL("/", request.url))
+  }
+
+  if (startsWithPath(pathname, "/designer-dashboard")) {
+    if (!(isAdmin || isDesigner)) {
+      return NextResponse.redirect(new URL("/", request.url))
+    }
+    return response
   }
 
   return response
@@ -133,6 +179,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+  ]
 }
