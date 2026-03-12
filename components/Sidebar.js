@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import LogoutButton from "./LogoutButton"
 import UserInfo from "./UserInfo"
@@ -51,19 +51,57 @@ function getLinkStyle(active) {
   }
 }
 
+function normalizeRole(roleValue) {
+  const role = String(roleValue || "").trim().toLowerCase()
+
+  if (role === "admin") return "admin"
+  if (role === "designer") return "designer"
+  if (role === "dentist") return "dentist"
+
+  return ""
+}
+
+function getFallbackRoleByEmail(email) {
+  const safeEmail = String(email || "").trim().toLowerCase()
+
+  if (safeEmail === "ram@alfaguides.com") return "admin"
+  if (safeEmail === "designer@test.com") return "designer"
+
+  if (
+    safeEmail === "dentist@test.com" ||
+    safeEmail === "mowag19505@devlug.com" ||
+    safeEmail === "riyafi9882@devlug.com"
+  ) {
+    return "dentist"
+  }
+
+  return ""
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const [role, setRole] = useState("")
+  const [loadingRole, setLoadingRole] = useState(true)
 
   useEffect(() => {
     const supabase = createClient()
 
     async function loadRole() {
+      setLoadingRole(true)
+
       const {
-        data: { user }
+        data: { user },
+        error: userError
       } = await supabase.auth.getUser()
 
-      if (!user) return
+      if (userError || !user) {
+        setRole("")
+        setLoadingRole(false)
+        return
+      }
+
+      let detectedRole = normalizeRole(user.user_metadata?.role)
+      const email = user.email || ""
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -71,7 +109,16 @@ export default function Sidebar() {
         .eq("id", user.id)
         .maybeSingle()
 
-      setRole(profile?.role || "")
+      if (profile?.role) {
+        detectedRole = normalizeRole(profile.role)
+      }
+
+      if (!detectedRole) {
+        detectedRole = getFallbackRoleByEmail(email)
+      }
+
+      setRole(detectedRole)
+      setLoadingRole(false)
     }
 
     loadRole()
@@ -88,10 +135,10 @@ export default function Sidebar() {
     { href: "/dentists", label: "Dentists", roles: ["admin", "designer"] }
   ]
 
-  const visibleLinks = allLinks.filter((link) => {
-    if (!role) return false
-    return link.roles.includes(role)
-  })
+  const visibleLinks = useMemo(() => {
+    if (!role) return []
+    return allLinks.filter((link) => link.roles.includes(role))
+  }, [role])
 
   return (
     <aside style={sidebarStyle}>
@@ -107,18 +154,45 @@ export default function Sidebar() {
       </div>
 
       <nav style={navStyle}>
-        {visibleLinks.map((link, index) => {
-          const isActive =
-            link.href === "/"
-              ? pathname === "/"
-              : pathname === link.href || pathname.startsWith(`${link.href}/`)
+        {loadingRole ? (
+          <div
+            style={{
+              color: "#CFCFCF",
+              fontSize: "14px",
+              padding: "8px 4px"
+            }}
+          >
+            Loading menu...
+          </div>
+        ) : visibleLinks.length > 0 ? (
+          visibleLinks.map((link, index) => {
+            const isActive =
+              link.href === "/"
+                ? pathname === "/"
+                : pathname === link.href || pathname.startsWith(`${link.href}/`)
 
-          return (
-            <Link key={`${link.href}-${link.label}-${index}`} href={link.href} style={getLinkStyle(isActive)}>
-              {link.label}
-            </Link>
-          )
-        })}
+            return (
+              <Link
+                key={`${link.href}-${link.label}-${index}`}
+                href={link.href}
+                style={getLinkStyle(isActive)}
+              >
+                {link.label}
+              </Link>
+            )
+          })
+        ) : (
+          <div
+            style={{
+              color: "#CFCFCF",
+              fontSize: "14px",
+              lineHeight: "1.6",
+              padding: "8px 4px"
+            }}
+          >
+            No menu items available for this account.
+          </div>
+        )}
 
         <UserInfo />
 

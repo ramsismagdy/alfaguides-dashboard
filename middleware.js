@@ -13,6 +13,27 @@ function isDentistDetailsPath(pathname) {
   return /^\/dentists\/[^/]+$/.test(pathname)
 }
 
+function normalizeRole(roleValue, emailValue = "") {
+  const role = String(roleValue || "").trim().toLowerCase()
+  const email = String(emailValue || "").trim().toLowerCase()
+
+  if (role === "admin" || role === "designer" || role === "dentist") {
+    return role
+  }
+
+  if (email === "ram@alfaguides.com") return "admin"
+  if (email === "designer@test.com") return "designer"
+
+  return "dentist"
+}
+
+function getHomeForRole(role) {
+  if (role === "admin") return "/"
+  if (role === "designer") return "/designer-dashboard"
+  if (role === "dentist") return "/my-cases"
+  return "/sign-in"
+}
+
 export async function middleware(request) {
   let response = NextResponse.next()
 
@@ -34,10 +55,6 @@ export async function middleware(request) {
     }
   )
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser()
-
   const pathname = request.nextUrl.pathname
 
   const publicRoutes = [
@@ -49,129 +66,82 @@ export async function middleware(request) {
 
   const isPublicRoute = publicRoutes.includes(pathname)
 
-  if (!user && !isPublicRoute) {
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    if (isPublicRoute) return response
     return NextResponse.redirect(new URL("/sign-in", request.url))
   }
 
-  if (user && isPublicRoute) {
-    if (pathname === "/update-password") {
-      return response
-    }
+  let role = ""
+  const email = user.email || ""
 
+  try {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .maybeSingle()
 
-    const role = profile?.role || ""
-
-    if (role === "admin") {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-
-    if (role === "designer") {
-      return NextResponse.redirect(new URL("/cases", request.url))
-    }
-
-    if (role === "dentist") {
-      return NextResponse.redirect(new URL("/my-cases", request.url))
-    }
-
-    return NextResponse.redirect(new URL("/", request.url))
+    role = normalizeRole(profile?.role || user.user_metadata?.role, email)
+  } catch {
+    role = normalizeRole(user.user_metadata?.role, email)
   }
 
-  if (!user) {
-    return response
+  if (isPublicRoute) {
+    if (pathname === "/update-password") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle()
-
-  const role = profile?.role || ""
-
-  const isAdmin = role === "admin"
-  const isDesigner = role === "designer"
-  const isDentist = role === "dentist"
 
   if (pathname === "/") {
-    if (isAdmin) return response
-
-    if (isDesigner) {
-      return NextResponse.redirect(new URL("/cases", request.url))
-    }
-
-    if (isDentist) {
-      return NextResponse.redirect(new URL("/my-cases", request.url))
-    }
-
-    return NextResponse.redirect(new URL("/sign-in", request.url))
-  }
-
-  if (startsWithPath(pathname, "/my-profile")) {
-    if (!isDentist) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
-  }
-
-  if (startsWithPath(pathname, "/my-cases")) {
-    if (!isDentist) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    if (role === "admin") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (startsWithPath(pathname, "/new-case")) {
-    if (!(isAdmin || isDentist)) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    if (role === "admin" || role === "dentist") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (pathname === "/cases") {
-    if (!(isAdmin || isDesigner)) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    if (role === "admin" || role === "designer") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (isCaseDetailsPath(pathname)) {
-    if (!(isAdmin || isDesigner || isDentist)) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    if (role === "admin" || role === "designer" || role === "dentist") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
+  }
+
+  if (startsWithPath(pathname, "/designer-dashboard")) {
+    if (role === "admin" || role === "designer") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
+  }
+
+  if (startsWithPath(pathname, "/my-cases")) {
+    if (role === "dentist") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
+  }
+
+  if (startsWithPath(pathname, "/my-profile")) {
+    if (role === "dentist") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (pathname === "/dentists") {
-    if (!(isAdmin || isDesigner)) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    if (role === "admin" || role === "designer") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (isDentistDetailsPath(pathname)) {
     const dentistIdInPath = pathname.split("/")[2]
 
-    if (isAdmin || isDesigner) {
-      return response
-    }
+    if (role === "admin" || role === "designer") return response
+    if (role === "dentist" && dentistIdInPath === user.id) return response
 
-    if (isDentist && dentistIdInPath === user.id) {
-      return response
-    }
-
-    return NextResponse.redirect(new URL("/", request.url))
-  }
-
-  if (startsWithPath(pathname, "/designer-dashboard")) {
-    if (!(isAdmin || isDesigner)) {
-      return NextResponse.redirect(new URL("/", request.url))
-    }
-    return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   return response
