@@ -129,7 +129,7 @@ export default function Sidebar() {
     { href: "/new-case", label: "New Case", roles: ["admin", "dentist"] },
     { href: "/cases", label: "Cases", roles: ["admin", "designer"] },
     { href: "/designer-dashboard", label: "My Cases", roles: ["designer"] },
-    { href: "/designer-dashboard", label: "Designer", roles: ["admin"] },
+    { href: "/designer-dashboard", label: "Designers", roles: ["admin"] },
     { href: "/my-cases", label: "My Cases", roles: ["dentist"] },
     { href: "/my-profile", label: "My Profile", roles: ["dentist"] },
     { href: "/dentists", label: "Dentists", roles: ["admin", "designer"] }

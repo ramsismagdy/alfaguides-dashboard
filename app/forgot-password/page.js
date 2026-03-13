@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { createClient } from "../../utils/supabase/client"
+import { createClient } from "@supabase/supabase-js"
 
 const pageStyle = {
   minHeight: "100vh",
@@ -40,12 +40,24 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState("")
 
+  const supabase = useMemo(() => {
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        auth: {
+          flowType: "implicit",
+          detectSessionInUrl: true,
+          persistSession: true
+        }
+      }
+    )
+  }, [])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setMessage("")
-
-    const supabase = createClient()
 
     const redirectTo =
       typeof window !== "undefined"

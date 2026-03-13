@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { createClient } from "../../utils/supabase/client"
+import { createClient } from "@supabase/supabase-js"
 
 const pageStyle = {
   minHeight: "100vh",
@@ -35,6 +35,14 @@ const inputStyle = {
   boxSizing: "border-box"
 }
 
+function parseHashParams() {
+  if (typeof window === "undefined") return new URLSearchParams()
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash
+  return new URLSearchParams(hash)
+}
+
 export default function UpdatePasswordPage() {
   const router = useRouter()
   const [password, setPassword] = useState("")
@@ -44,23 +52,46 @@ export default function UpdatePasswordPage() {
   const [hasRecoverySession, setHasRecoverySession] = useState(false)
   const [message, setMessage] = useState("")
 
+  const supabase = useMemo(() => {
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        auth: {
+          flowType: "implicit",
+          detectSessionInUrl: true,
+          persistSession: true
+        }
+      }
+    )
+  }, [])
+
   useEffect(() => {
-    const supabase = createClient()
     let mounted = true
 
-    const initializeRecoverySession = async () => {
+    const init = async () => {
       try {
-        const currentUrl = new URL(window.location.href)
-        const code = currentUrl.searchParams.get("code")
+        const hashParams = parseHashParams()
+        const accessToken = hashParams.get("access_token")
+        const refreshToken = hashParams.get("refresh_token")
+        const type = hashParams.get("type")
 
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (accessToken && refreshToken && type === "recovery") {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+
           if (error) {
             if (mounted) {
               setMessage(error.message)
               setCheckingSession(false)
             }
             return
+          }
+
+          if (typeof window !== "undefined" && window.location.hash) {
+            window.history.replaceState({}, document.title, window.location.pathname)
           }
         }
 
@@ -79,16 +110,10 @@ export default function UpdatePasswordPage() {
         } = supabase.auth.onAuthStateChange((event, sessionData) => {
           if (!mounted) return
 
-          if (event === "PASSWORD_RECOVERY" && sessionData) {
+          if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "INITIAL_SESSION") && sessionData) {
             setHasRecoverySession(true)
             setCheckingSession(false)
             setMessage("")
-            return
-          }
-
-          if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && sessionData) {
-            setHasRecoverySession(true)
-            setCheckingSession(false)
           }
         })
 
@@ -105,13 +130,11 @@ export default function UpdatePasswordPage() {
           } else {
             setHasRecoverySession(false)
             setCheckingSession(false)
-            setMessage("Recovery session not found. Please open the latest reset link from your email again.")
+            setMessage("Recovery session not found. Please open the newest reset link from your email on this same browser.")
           }
-        }, 1200)
+        }, 800)
 
-        return () => {
-          subscription.unsubscribe()
-        }
+        return () => subscription.unsubscribe()
       } catch (error) {
         if (mounted) {
           setMessage(error.message || "Unable to verify reset session.")
@@ -121,8 +144,7 @@ export default function UpdatePasswordPage() {
     }
 
     let cleanup
-
-    initializeRecoverySession().then((fn) => {
+    init().then((fn) => {
       cleanup = fn
     })
 
@@ -130,7 +152,7 @@ export default function UpdatePasswordPage() {
       mounted = false
       if (cleanup) cleanup()
     }
-  }, [])
+  }, [supabase])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -147,11 +169,10 @@ export default function UpdatePasswordPage() {
     }
 
     if (!hasRecoverySession) {
-      setMessage("Recovery session not found. Please open the reset link from your email again.")
+      setMessage("Recovery session not found. Please open the newest reset link from your email on this same browser.")
       return
     }
 
-    const supabase = createClient()
     setLoading(true)
 
     const { error } = await supabase.auth.updateUser({
@@ -166,7 +187,8 @@ export default function UpdatePasswordPage() {
 
     setMessage("Password updated successfully.")
 
-    setTimeout(() => {
+    setTimeout(async () => {
+      await supabase.auth.signOut()
       router.push("/sign-in")
     }, 1200)
   }
@@ -231,7 +253,7 @@ export default function UpdatePasswordPage() {
         </button>
 
         {message && (
-          <p style={{ marginTop: "18px", color: "#F0F0F0", textAlign: "center" }}>
+          <p style={{ marginTop: "18px", color: "#F0F0F0", textAlign: "center", lineHeight: "1.6" }}>
             {message}
           </p>
         )}
