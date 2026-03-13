@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -134,6 +135,17 @@ const secondaryButtonStyle = {
   cursor: "pointer"
 }
 
+const resetButtonStyle = {
+  background: "#FFFFFF",
+  color: "#8A3D68",
+  border: "1px solid #D8B9C8",
+  borderRadius: "12px",
+  padding: "10px 16px",
+  fontSize: "14px",
+  fontWeight: "700",
+  cursor: "pointer"
+}
+
 const deleteButtonStyle = {
   background: "#B04D7A",
   color: "#FFFFFF",
@@ -185,7 +197,7 @@ const tableWrapStyle = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: "760px"
+  minWidth: "900px"
 }
 
 const thStyle = {
@@ -254,15 +266,14 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState("")
   const [busyUserId, setBusyUserId] = useState("")
+  const [resetBusyUserId, setResetBusyUserId] = useState("")
 
   useEffect(() => {
     let mounted = true
 
     async function init() {
       try {
-        const {
-          data: { user }
-        } = await supabase.auth.getUser()
+        const { data: { user } } = await supabase.auth.getUser()
 
         if (!user) {
           window.location.href = "/sign-in"
@@ -277,18 +288,12 @@ export default function AdminUsersPage() {
           .eq("id", user.id)
           .maybeSingle()
 
-        if (profile?.role) {
-          role = normalizeRole(profile.role)
-        }
-
-        if (!role) {
-          role = getFallbackRoleByEmail(user.email)
-        }
+        if (profile?.role) role = normalizeRole(profile.role)
+        if (!role) role = getFallbackRoleByEmail(user.email)
 
         if (!mounted) return
 
         setCurrentRole(role)
-
         if (role !== "admin") {
           window.location.href = "/"
           return
@@ -307,10 +312,7 @@ export default function AdminUsersPage() {
     }
 
     init()
-
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [supabase])
 
   async function loadUsers() {
@@ -334,14 +336,8 @@ export default function AdminUsersPage() {
   }
 
   const generatedNote = useMemo(() => {
-    if (form.role === "external_lab") {
-      return "External lab accounts are intended for lab partners."
-    }
-
-    if (form.role === "designer") {
-      return "Designer accounts can be used for case work and progress handling."
-    }
-
+    if (form.role === "external_lab") return "External lab accounts are intended for lab partners."
+    if (form.role === "designer") return "Designer accounts can be used for case work and progress handling."
     return "Admin accounts should be created carefully because they have full system access."
   }, [form.role])
 
@@ -352,20 +348,15 @@ export default function AdminUsersPage() {
       const role = normalizeRole(item.role)
       const fullName = String(item.full_name || "").toLowerCase()
       const email = String(item.email || "").toLowerCase()
-
       const matchesSearch = !query || fullName.includes(query) || email.includes(query)
       const matchesRole = !roleFilter || role === roleFilter
-
       return matchesSearch && matchesRole
     })
   }, [users, search, roleFilter])
 
   function handleChange(e) {
     const { name, value } = e.target
-    setForm((prev) => ({
-      ...prev,
-      [name]: value
-    }))
+    setForm((prev) => ({ ...prev, [name]: value }))
   }
 
   function resetForm() {
@@ -389,13 +380,8 @@ export default function AdminUsersPage() {
         phone: form.phone.trim()
       }
 
-      const {
-        data: { session }
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        throw new Error("No active session found. Please sign in again.")
-      }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error("No active session found. Please sign in again.")
 
       const response = await fetch("/api/admin/create-user", {
         method: "POST",
@@ -408,16 +394,13 @@ export default function AdminUsersPage() {
 
       const responseText = await response.text()
       let result = {}
-
       try {
         result = responseText ? JSON.parse(responseText) : {}
       } catch {
         throw new Error(responseText || "Unexpected server response.")
       }
 
-      if (!response.ok) {
-        throw new Error(result?.error || "Failed to create user.")
-      }
+      if (!response.ok) throw new Error(result?.error || "Failed to create user.")
 
       setMessage(`User created successfully: ${result.email} (${prettyRole(result.role)})`)
       setMessageType("success")
@@ -432,6 +415,41 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleResetPassword(email) {
+    const confirmed = window.confirm(`Send password reset email to ${email}?`)
+    if (!confirmed) return
+
+    try {
+      setResetBusyUserId(email)
+      setUsersMessage("")
+      setUsersMessageType("info")
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error("No active session found. Please sign in again.")
+
+      const response = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ email })
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error || "Failed to send reset email.")
+
+      setUsersMessage(`Password reset email sent to ${email}.`)
+      setUsersMessageType("success")
+    } catch (error) {
+      console.error("Reset password error:", error)
+      setUsersMessage(error.message || "Failed to send reset email.")
+      setUsersMessageType("error")
+    } finally {
+      setResetBusyUserId("")
+    }
+  }
+
   async function handleDeleteUser(userId, email) {
     const confirmed = window.confirm(`Delete account for ${email}? This action cannot be undone.`)
     if (!confirmed) return
@@ -441,13 +459,8 @@ export default function AdminUsersPage() {
       setUsersMessage("")
       setUsersMessageType("info")
 
-      const {
-        data: { session }
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        throw new Error("No active session found. Please sign in again.")
-      }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error("No active session found. Please sign in again.")
 
       const response = await fetch("/api/admin/delete-user", {
         method: "POST",
@@ -459,10 +472,7 @@ export default function AdminUsersPage() {
       })
 
       const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result?.error || "Failed to delete user.")
-      }
+      if (!response.ok) throw new Error(result?.error || "Failed to delete user.")
 
       setUsers((prev) => prev.filter((item) => item.id !== userId))
       setUsersMessage("User deleted successfully.")
@@ -477,42 +487,16 @@ export default function AdminUsersPage() {
   }
 
   if (loadingPage) {
-    return (
-      <div style={pageStyle}>
-        <Sidebar />
-        <main style={contentStyle}>
-          <div style={containerStyle}>
-            <div style={cardStyle}>Loading...</div>
-          </div>
-        </main>
-      </div>
-    )
+    return <div style={pageStyle}><Sidebar /><main style={contentStyle}><div style={containerStyle}><div style={cardStyle}>Loading...</div></div></main></div>
   }
 
-  if (currentRole !== "admin") {
-    return null
-  }
+  if (currentRole !== "admin") return null
 
   const messageStyle = {
     ...messageBaseStyle,
-    background:
-      messageType === "success"
-        ? "#EDF9F1"
-        : messageType === "error"
-        ? "#FFF0F0"
-        : "#F4F3FF",
-    color:
-      messageType === "success"
-        ? "#256B42"
-        : messageType === "error"
-        ? "#8F2D2D"
-        : "#4D4AA8",
-    border:
-      messageType === "success"
-        ? "1px solid #CDEED8"
-        : messageType === "error"
-        ? "1px solid #F3CFCF"
-        : "1px solid #DCDCF8"
+    background: messageType === "success" ? "#EDF9F1" : messageType === "error" ? "#FFF0F0" : "#F4F3FF",
+    color: messageType === "success" ? "#256B42" : messageType === "error" ? "#8F2D2D" : "#4D4AA8",
+    border: messageType === "success" ? "1px solid #CDEED8" : messageType === "error" ? "1px solid #F3CFCF" : "1px solid #DCDCF8"
   }
 
   const usersMessageStyle = {
@@ -527,66 +511,32 @@ export default function AdminUsersPage() {
   return (
     <div style={pageStyle}>
       <Sidebar />
-
       <main style={contentStyle}>
         <div style={containerStyle}>
           <div style={cardStyle}>
             <div style={titleStyle}>Create User Account</div>
-            <div style={subtitleStyle}>
-              Admin-only page to create admin, designer, and external lab accounts.
-            </div>
+            <div style={subtitleStyle}>Admin-only page to create admin, designer, and external lab accounts.</div>
 
             <form onSubmit={handleSubmit}>
               <div style={gridStyle}>
                 <div style={fieldWrapStyle}>
                   <label style={labelStyle}>Full Name</label>
-                  <input
-                    style={inputStyle}
-                    type="text"
-                    name="full_name"
-                    value={form.full_name}
-                    onChange={handleChange}
-                    placeholder="Enter full name"
-                    required
-                  />
+                  <input style={inputStyle} type="text" name="full_name" value={form.full_name} onChange={handleChange} placeholder="Enter full name" required />
                 </div>
 
                 <div style={fieldWrapStyle}>
                   <label style={labelStyle}>Email</label>
-                  <input
-                    style={inputStyle}
-                    type="email"
-                    name="email"
-                    value={form.email}
-                    onChange={handleChange}
-                    placeholder="Enter email"
-                    required
-                  />
+                  <input style={inputStyle} type="email" name="email" value={form.email} onChange={handleChange} placeholder="Enter email" required />
                 </div>
 
                 <div style={fieldWrapStyle}>
                   <label style={labelStyle}>Temporary Password</label>
-                  <input
-                    style={inputStyle}
-                    type="password"
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
-                    placeholder="Enter password"
-                    required
-                    minLength={8}
-                  />
+                  <input style={inputStyle} type="password" name="password" value={form.password} onChange={handleChange} placeholder="Enter password" required minLength={8} />
                 </div>
 
                 <div style={fieldWrapStyle}>
                   <label style={labelStyle}>Role</label>
-                  <select
-                    style={selectStyle}
-                    name="role"
-                    value={form.role}
-                    onChange={handleChange}
-                    required
-                  >
+                  <select style={selectStyle} name="role" value={form.role} onChange={handleChange} required>
                     <option value="admin">Admin</option>
                     <option value="designer">Designer</option>
                     <option value="external_lab">External Lab</option>
@@ -595,46 +545,20 @@ export default function AdminUsersPage() {
 
                 <div style={fieldWrapStyle}>
                   <label style={labelStyle}>Phone</label>
-                  <input
-                    style={inputStyle}
-                    type="text"
-                    name="phone"
-                    value={form.phone}
-                    onChange={handleChange}
-                    placeholder="Optional"
-                  />
+                  <input style={inputStyle} type="text" name="phone" value={form.phone} onChange={handleChange} placeholder="Optional" />
                 </div>
 
                 <div style={{ ...fieldWrapStyle, ...fullWidthStyle }}>
                   <label style={labelStyle}>Role Note</label>
-                  <div
-                    style={{
-                      ...inputStyle,
-                      minHeight: "48px",
-                      display: "flex",
-                      alignItems: "center",
-                      background: "#FAF6F8",
-                      color: "#6E5C66"
-                    }}
-                  >
+                  <div style={{ ...inputStyle, minHeight: "48px", display: "flex", alignItems: "center", background: "#FAF6F8", color: "#6E5C66" }}>
                     {generatedNote}
                   </div>
                 </div>
               </div>
 
               <div style={buttonRowStyle}>
-                <button type="submit" style={primaryButtonStyle} disabled={submitting}>
-                  {submitting ? "Creating..." : "Create User"}
-                </button>
-
-                <button
-                  type="button"
-                  style={secondaryButtonStyle}
-                  onClick={resetForm}
-                  disabled={submitting}
-                >
-                  Reset
-                </button>
+                <button type="submit" style={primaryButtonStyle} disabled={submitting}>{submitting ? "Creating..." : "Create User"}</button>
+                <button type="button" style={secondaryButtonStyle} onClick={resetForm} disabled={submitting}>Reset</button>
               </div>
             </form>
 
@@ -646,7 +570,7 @@ export default function AdminUsersPage() {
                 <li>This page is for admin accounts only.</li>
                 <li>User creation is done through a secure server route.</li>
                 <li>The profile row should be created automatically by your trigger or the route.</li>
-                <li>Use the user list below to delete existing accounts.</li>
+                <li>Use the user list below to delete existing accounts or send reset emails.</li>
               </ul>
             </div>
           </div>
@@ -655,24 +579,11 @@ export default function AdminUsersPage() {
 
           <div style={cardStyle}>
             <h2 style={sectionTitleStyle}>Existing User Accounts</h2>
-            <p style={sectionSubtitleStyle}>
-              Keep the original create-user section above, and manage existing accounts here.
-            </p>
+            <p style={sectionSubtitleStyle}>Keep the original create-user section above, and manage existing accounts here.</p>
 
             <div style={filterGridStyle}>
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="Search by name or email"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-
-              <select
-                style={selectStyle}
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-              >
+              <input style={inputStyle} type="text" placeholder="Search by name or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <select style={selectStyle} value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
                 <option value="">All roles</option>
                 <option value="admin">Admin</option>
                 <option value="designer">Designer</option>
@@ -707,14 +618,14 @@ export default function AdminUsersPage() {
                         <td style={tdStyle}>{prettyRole(item.role)}</td>
                         <td style={tdStyle}>{item.phone || "-"}</td>
                         <td style={tdStyle}>
-                          <button
-                            type="button"
-                            style={deleteButtonStyle}
-                            onClick={() => handleDeleteUser(item.id, item.email || "this user")}
-                            disabled={busyUserId === item.id}
-                          >
-                            {busyUserId === item.id ? "Deleting..." : "Delete"}
-                          </button>
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <button type="button" style={resetButtonStyle} onClick={() => handleResetPassword(item.email)} disabled={resetBusyUserId === item.email || !item.email}>
+                              {resetBusyUserId === item.email ? "Sending..." : "Reset Password"}
+                            </button>
+                            <button type="button" style={deleteButtonStyle} onClick={() => handleDeleteUser(item.id, item.email || "this user")} disabled={busyUserId === item.id}>
+                              {busyUserId === item.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
