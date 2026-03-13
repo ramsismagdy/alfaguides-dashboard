@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
@@ -36,12 +36,42 @@ const inputStyle = {
   boxSizing: "border-box"
 }
 
+const checkboxRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "12px",
+  marginBottom: "18px",
+  flexWrap: "wrap"
+}
+
+const rememberWrapStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  color: "#F0F0F0",
+  fontSize: "13px"
+}
+
 export default function SignInPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState("")
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const savedRemember = localStorage.getItem("remember_me") === "true"
+    const savedEmail = localStorage.getItem("remembered_email") || ""
+
+    if (savedRemember && savedEmail) {
+      setRememberMe(true)
+      setEmail(savedEmail)
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -59,6 +89,16 @@ export default function SignInPage() {
       setMessage(error.message)
       setLoading(false)
       return
+    }
+
+    if (typeof window !== "undefined") {
+      if (rememberMe) {
+        localStorage.setItem("remember_me", "true")
+        localStorage.setItem("remembered_email", email.trim())
+      } else {
+        localStorage.removeItem("remember_me")
+        localStorage.removeItem("remembered_email")
+      }
     }
 
     if (data?.user?.id) {
@@ -110,7 +150,7 @@ export default function SignInPage() {
           />
         </div>
 
-        <div style={{ marginBottom: "10px" }}>
+        <div style={{ marginBottom: "14px" }}>
           <label style={{ color: "#F0F0F0", display: "block", marginBottom: "8px", fontSize: "14px" }}>
             Password
           </label>
@@ -123,7 +163,17 @@ export default function SignInPage() {
           />
         </div>
 
-        <div style={{ marginBottom: "18px", textAlign: "right" }}>
+        <div style={checkboxRowStyle}>
+          <label style={rememberWrapStyle}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              style={{ accentColor: "#685B60" }}
+            />
+            Remember me
+          </label>
+
           <Link
             href="/forgot-password"
             style={{
@@ -164,7 +214,7 @@ export default function SignInPage() {
         </div>
 
         {message && (
-          <p style={{ marginTop: "18px", color: "#F0F0F0", textAlign: "center" }}>
+          <p style={{ marginTop: "18px", color: "#F0F0F0", textAlign: "center", lineHeight: "1.6" }}>
             {message}
           </p>
         )}

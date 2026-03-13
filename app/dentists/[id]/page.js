@@ -83,6 +83,9 @@ export default function DentistProfilePage() {
   const [caseSearch, setCaseSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [serviceFilter, setServiceFilter] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [changingPassword, setChangingPassword] = useState(false)
 
   useEffect(() => {
     if (dentistId) {
@@ -164,6 +167,7 @@ export default function DentistProfilePage() {
 
   const canEdit = currentRole === "admin" || (currentRole === "dentist" && currentUserId === dentistId)
   const canSendReset = currentRole === "admin"
+  const canChangeOwnPassword = currentUserId === dentistId
 
   const updateField = (key, value) => {
     setProfileForm((prev) => ({ ...prev, [key]: value }))
@@ -250,6 +254,42 @@ export default function DentistProfilePage() {
 
     setMessage("Password reset email sent successfully.")
     setSendingReset(false)
+  }
+
+  const changeOwnPassword = async () => {
+    if (!canChangeOwnPassword) return
+
+    if (!password || !confirmPassword) {
+      setMessage("Please enter and confirm your new password.")
+      return
+    }
+
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.")
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.")
+      return
+    }
+
+    const supabase = createClient()
+    setChangingPassword(true)
+    setMessage("")
+
+    const { error } = await supabase.auth.updateUser({ password })
+
+    if (error) {
+      setMessage(error.message)
+      setChangingPassword(false)
+      return
+    }
+
+    setPassword("")
+    setConfirmPassword("")
+    setMessage("Password updated successfully.")
+    setChangingPassword(false)
   }
 
   const serviceOptions = useMemo(() => {
@@ -489,6 +529,36 @@ export default function DentistProfilePage() {
                 </button>
               )}
             </div>
+
+            {canChangeOwnPassword && (
+              <div style={cardStyle}>
+                <h2 style={{ color: "#685B60", marginTop: 0 }}>Change Password</h2>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                  <input
+                    type="password"
+                    style={inputStyle}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="New Password"
+                  />
+                  <input
+                    type="password"
+                    style={inputStyle}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm New Password"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={changeOwnPassword}
+                  disabled={changingPassword}
+                  style={{ ...buttonStyle, marginTop: "16px" }}
+                >
+                  {changingPassword ? "Updating..." : "Update Password"}
+                </button>
+              </div>
+            )}
 
             <div style={cardStyle}>
               <h2 style={{ color: "#685B60", marginTop: 0 }}>Special Note</h2>
