@@ -142,6 +142,20 @@ function detectFileType(file) {
   if (name.endsWith(".stl")) return "STL"
   if (name.endsWith(".obj") || name.endsWith(".ply")) return "3D Model"
   if (name.endsWith(".dcm") || name.endsWith(".dicom") || mime.includes("dicom")) return "DICOM"
+  if (
+    name.endsWith(".pdf") ||
+    mime === "application/pdf"
+  ) {
+    return "PDF"
+  }
+  if (
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "Word Document"
+  }
   if (mime.startsWith("image/")) return "Photo"
 
   if (
@@ -169,6 +183,12 @@ function isAllowedFile(file) {
     name.endsWith(".ply") ||
     name.endsWith(".dcm") ||
     name.endsWith(".dicom") ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    mime === "application/pdf" ||
+    mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     mime.startsWith("image/") ||
     name.endsWith(".zip") ||
     name.endsWith(".rar") ||
@@ -659,7 +679,7 @@ export default function NewCasePage() {
               key={fileInputKey}
               type="file"
               multiple
-              accept=".stl,.obj,.ply,.dcm,.dicom,image/*,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
+              accept=".stl,.obj,.ply,.dcm,.dicom,.pdf,.doc,.docx,image/*,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
               style={inputStyle}
               onChange={(e) => setSelectedFiles(Array.from(e.target.files || []))}
             />
@@ -672,7 +692,7 @@ export default function NewCasePage() {
                 lineHeight: "1.6"
               }}
             >
-              Supported files: STL, OBJ, PLY, DCM, DICOM, JPG, JPEG, PNG, ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ
+              Supported files: STL, OBJ, PLY, DCM, DICOM, PDF, DOC, DOCX, JPG, JPEG, PNG, ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ
             </div>
 
             <div style={{ marginTop: "18px" }}>

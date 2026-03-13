@@ -154,6 +154,20 @@ function detectFileType(file) {
   if (name.endsWith(".stl")) return "STL"
   if (name.endsWith(".obj") || name.endsWith(".ply")) return "3D Model"
   if (name.endsWith(".dcm") || name.endsWith(".dicom") || mime.includes("dicom")) return "DICOM"
+  if (
+    name.endsWith(".pdf") ||
+    mime === "application/pdf"
+  ) {
+    return "PDF"
+  }
+  if (
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "Word Document"
+  }
   if (mime.startsWith("image/")) return "Photo"
 
   if (
@@ -195,6 +209,12 @@ function isAllowedFile(file) {
     name.endsWith(".ply") ||
     name.endsWith(".dcm") ||
     name.endsWith(".dicom") ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx") ||
+    mime === "application/pdf" ||
+    mime === "application/msword" ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     mime.startsWith("image/") ||
     name.endsWith(".jpg") ||
     name.endsWith(".jpeg") ||
@@ -1672,7 +1692,7 @@ export default function CaseDetailsPage() {
                       key={finalDesignInputKey}
                       type="file"
                       multiple
-                      accept=".stl,.obj,.ply,.dcm,.dicom,image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.svg,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
+                      accept=".stl,.obj,.ply,.dcm,.dicom,.pdf,.doc,.docx,image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.svg,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
                       style={inputStyle}
                       onChange={(e) => setSelectedFinalDesignFiles(Array.from(e.target.files || []))}
                     />
@@ -1995,7 +2015,7 @@ export default function CaseDetailsPage() {
                   key={fileInputKey}
                   type="file"
                   multiple
-                  accept=".stl,.obj,.ply,.dcm,.dicom,image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.svg,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
+                  accept=".stl,.obj,.ply,.dcm,.dicom,.pdf,.doc,.docx,image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.svg,.zip,.rar,.7z,.tar,.gz,.bz2,.xz"
                   style={inputStyle}
                   onChange={(e) => setSelectedFiles(Array.from(e.target.files || []))}
                 />
