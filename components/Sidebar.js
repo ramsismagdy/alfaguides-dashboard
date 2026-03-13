@@ -52,11 +52,15 @@ function getLinkStyle(active) {
 }
 
 function normalizeRole(roleValue) {
-  const role = String(roleValue || "").trim().toLowerCase()
+  const role = String(roleValue || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_")
 
   if (role === "admin") return "admin"
   if (role === "designer") return "designer"
   if (role === "dentist") return "dentist"
+  if (role === "external_lab") return "external_lab"
 
   return ""
 }
@@ -85,54 +89,72 @@ export default function Sidebar() {
 
   useEffect(() => {
     const supabase = createClient()
+    let mounted = true
 
     async function loadRole() {
       setLoadingRole(true)
 
-      const {
-        data: { user },
-        error: userError
-      } = await supabase.auth.getUser()
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser()
 
-      if (userError || !user) {
-        setRole("")
-        setLoadingRole(false)
-        return
+        if (userError || !user) {
+          if (mounted) {
+            setRole("")
+            setLoadingRole(false)
+          }
+          return
+        }
+
+        let detectedRole = normalizeRole(user.user_metadata?.role)
+        const email = user.email || ""
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (profile?.role) {
+          detectedRole = normalizeRole(profile.role)
+        }
+
+        if (!detectedRole) {
+          detectedRole = getFallbackRoleByEmail(email)
+        }
+
+        if (mounted) {
+          setRole(detectedRole)
+          setLoadingRole(false)
+        }
+      } catch (error) {
+        console.error("Sidebar role load error:", error)
+        if (mounted) {
+          setRole("")
+          setLoadingRole(false)
+        }
       }
-
-      let detectedRole = normalizeRole(user.user_metadata?.role)
-      const email = user.email || ""
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle()
-
-      if (profile?.role) {
-        detectedRole = normalizeRole(profile.role)
-      }
-
-      if (!detectedRole) {
-        detectedRole = getFallbackRoleByEmail(email)
-      }
-
-      setRole(detectedRole)
-      setLoadingRole(false)
     }
 
     loadRole()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const allLinks = [
     { href: "/", label: "Dashboard", roles: ["admin"] },
     { href: "/new-case", label: "New Case", roles: ["admin", "dentist"] },
-    { href: "/cases", label: "Cases", roles: ["admin", "designer"] },
+    { href: "/cases", label: "Cases", roles: ["admin", "designer", "external_lab"] },
     { href: "/designer-dashboard", label: "My Cases", roles: ["designer"] },
     { href: "/designer-dashboard", label: "Designers", roles: ["admin"] },
     { href: "/my-cases", label: "My Cases", roles: ["dentist"] },
     { href: "/my-profile", label: "My Profile", roles: ["dentist"] },
-    { href: "/dentists", label: "Dentists", roles: ["admin", "designer"] }
+    { href: "/dentists", label: "Dentists", roles: ["admin", "designer"] },
+    { href: "/admin/users", label: "User Management", roles: ["admin"] }
   ]
 
   const visibleLinks = useMemo(() => {

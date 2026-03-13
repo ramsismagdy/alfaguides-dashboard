@@ -14,10 +14,13 @@ function isDentistDetailsPath(pathname) {
 }
 
 function normalizeRole(roleValue, emailValue = "") {
-  const role = String(roleValue || "").trim().toLowerCase()
+  const role = String(roleValue || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_")
   const email = String(emailValue || "").trim().toLowerCase()
 
-  if (role === "admin" || role === "designer" || role === "dentist") {
+  if (role === "admin" || role === "designer" || role === "dentist" || role === "external_lab") {
     return role
   }
 
@@ -31,10 +34,22 @@ function getHomeForRole(role) {
   if (role === "admin") return "/"
   if (role === "designer") return "/designer-dashboard"
   if (role === "dentist") return "/my-cases"
+  if (role === "external_lab") return "/cases"
   return "/sign-in"
 }
 
 export async function middleware(request) {
+  const pathname = request.nextUrl.pathname
+
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname === "/favicon.ico" ||
+    /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$/.test(pathname)
+  ) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next()
 
   const supabase = createServerClient(
@@ -54,8 +69,6 @@ export async function middleware(request) {
       }
     }
   )
-
-  const pathname = request.nextUrl.pathname
 
   const publicRoutes = [
     "/sign-in",
@@ -100,18 +113,25 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
+  if (startsWithPath(pathname, "/admin/users")) {
+    if (role === "admin") return response
+    return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
+  }
+
   if (startsWithPath(pathname, "/new-case")) {
     if (role === "admin" || role === "dentist") return response
     return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (pathname === "/cases") {
-    if (role === "admin" || role === "designer") return response
+    if (role === "admin" || role === "designer" || role === "external_lab") return response
     return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
   if (isCaseDetailsPath(pathname)) {
-    if (role === "admin" || role === "designer" || role === "dentist") return response
+    if (role === "admin" || role === "designer" || role === "dentist" || role === "external_lab") {
+      return response
+    }
     return NextResponse.redirect(new URL(getHomeForRole(role), request.url))
   }
 
@@ -148,7 +168,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
-  ]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
 }
